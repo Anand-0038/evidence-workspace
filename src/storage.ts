@@ -10,6 +10,7 @@ export type WorkspaceParseResult={ok:true;workspace:Workspace}|{ok:false;error:s
 const record=(value:unknown):value is Record<string,unknown>=>Boolean(value)&&typeof value==="object"&&!Array.isArray(value);
 const string=(value:unknown)=>typeof value==="string";
 const finite=(value:unknown)=>typeof value==="number"&&Number.isFinite(value);
+const safeInteger=(value:unknown)=>typeof value==="number"&&Number.isSafeInteger(value);
 const stringArray=(value:unknown)=>Array.isArray(value)&&value.every(string);
 const cloneExample=():Workspace=>structuredClone(exampleWorkspace);
 
@@ -27,18 +28,23 @@ function normalizeLegacyFacts(value:unknown):unknown{
 }
 
 function validWorkspace(value:unknown):value is Workspace{
-  if(!record(value)||value.schemaVersion!==1||!Number.isInteger(value.revision)||(value.revision as number)<1||(value.title!==undefined&&!string(value.title))) return false;
+  if(!record(value)||value.schemaVersion!==1||!safeInteger(value.revision)||(value.revision as number)<1||(value.title!==undefined&&!string(value.title))) return false;
   if(!Array.isArray(value.claims)||value.claims.length===0||!Array.isArray(value.evidence)||!Array.isArray(value.proposals)||!Array.isArray(value.activity)) return false;
   const claims=value.claims.every((claim)=>record(claim)&&string(claim.id)&&string(claim.text)&&["unreviewed","supported","contradicted","unsupported"].includes(claim.state as string)&&stringArray(claim.linkedEvidenceIds)&&(claim.rationale===null||string(claim.rationale))&&["pending","approved","rejected"].includes(claim.humanDecision as string)&&validAssertion(claim.assertion));
   const evidence=value.evidence.every((item)=>record(item)&&string(item.id)&&string(item.title)&&string(item.sourceLabel)&&string(item.passage)&&typeof item.sharedWithAgent==="boolean"&&["primary","supporting","unknown"].includes(item.kind as string)&&Array.isArray(item.facts)&&item.facts.every((fact)=>record(fact)&&string(fact.metric)&&string(fact.unit)&&string(fact.sourceWindow)&&string(fact.sourceExcerpt)&&(fact.kind==="range"?finite(fact.baseline)&&finite(fact.observed):fact.kind==="scalar"&&finite(fact.value))));
-  const proposals=value.proposals.every((proposal)=>record(proposal)&&string(proposal.id)&&string(proposal.claimId)&&string(proposal.proposedText)&&(proposal.proposedAssertion===undefined||validAssertion(proposal.proposedAssertion))&&string(proposal.reason)&&["pending","accepted","rejected"].includes(proposal.state as string)&&string(proposal.createdAt)&&Number.isInteger(proposal.basedOnRevision)&&string(proposal.claimTextAtCreation));
-  const activity=value.activity.every((item)=>record(item)&&string(item.id)&&["human","agent","system"].includes(item.actor as string)&&string(item.message)&&Number.isInteger(item.revision));
+  const proposals=value.proposals.every((proposal)=>record(proposal)&&string(proposal.id)&&string(proposal.claimId)&&string(proposal.proposedText)&&(proposal.proposedAssertion===undefined||validAssertion(proposal.proposedAssertion))&&string(proposal.reason)&&["pending","accepted","rejected"].includes(proposal.state as string)&&string(proposal.createdAt)&&safeInteger(proposal.basedOnRevision)&&string(proposal.claimTextAtCreation));
+  const activity=value.activity.every((item)=>record(item)&&string(item.id)&&["human","agent","system"].includes(item.actor as string)&&string(item.message)&&safeInteger(item.revision));
   if(!claims||!evidence||!proposals||!activity) return false;
   const claimIds=new Set((value.claims as Array<{id:string}>).map((item)=>item.id));
   const evidenceIds=new Set((value.evidence as Array<{id:string}>).map((item)=>item.id));
   const proposalIds=new Set((value.proposals as Array<{id:string}>).map((item)=>item.id));
   const referencesValid=(value.claims as Array<{linkedEvidenceIds:string[]}>).every((claim)=>claim.linkedEvidenceIds.every((id)=>evidenceIds.has(id)))&&(value.proposals as Array<{claimId:string;state:string;basedOnRevision:number;claimTextAtCreation:string}>).every((proposal)=>{const claim=(value.claims as Array<{id:string;text:string}>).find((item)=>item.id===proposal.claimId);return Boolean(claim)&&proposal.basedOnRevision>=1&&proposal.basedOnRevision<=(value.revision as number)&&(proposal.state!=="pending"||(proposal.basedOnRevision===value.revision&&proposal.claimTextAtCreation===claim?.text))});
   return claimIds.size===value.claims.length&&evidenceIds.size===value.evidence.length&&proposalIds.size===value.proposals.length&&referencesValid;
+}
+
+function normalizedWorkspace(value:Workspace):Workspace{
+  const assertion=(item:QuantitativeAssertion):QuantitativeAssertion=>item.kind==="percentage_change"?{kind:item.kind,metric:item.metric,claimedPercent:item.claimedPercent,unit:item.unit,sourceWindow:item.sourceWindow}:item.kind==="before_after"?{kind:item.kind,metric:item.metric,baseline:item.baseline,observed:item.observed,unit:item.unit,sourceWindow:item.sourceWindow}:{kind:item.kind,metric:item.metric,claimedValue:item.claimedValue,unit:item.unit,sourceWindow:item.sourceWindow};
+  return {schemaVersion:1,revision:value.revision,...(value.title===undefined?{}:{title:value.title}),claims:value.claims.map((item)=>({id:item.id,text:item.text,state:item.state,linkedEvidenceIds:[...item.linkedEvidenceIds],rationale:item.rationale,humanDecision:item.humanDecision,assertion:assertion(item.assertion)})),evidence:value.evidence.map((item)=>({id:item.id,title:item.title,sourceLabel:item.sourceLabel,passage:item.passage,sharedWithAgent:item.sharedWithAgent,kind:item.kind,facts:item.facts.map((fact)=>fact.kind==="range"?{kind:fact.kind,metric:fact.metric,unit:fact.unit,sourceWindow:fact.sourceWindow,sourceExcerpt:fact.sourceExcerpt,baseline:fact.baseline,observed:fact.observed}:{kind:fact.kind,metric:fact.metric,unit:fact.unit,sourceWindow:fact.sourceWindow,sourceExcerpt:fact.sourceExcerpt,value:fact.value})})),proposals:value.proposals.map((item)=>({id:item.id,claimId:item.claimId,proposedText:item.proposedText,...(item.proposedAssertion===undefined?{}:{proposedAssertion:assertion(item.proposedAssertion)}),reason:item.reason,state:item.state,createdAt:item.createdAt,basedOnRevision:item.basedOnRevision,claimTextAtCreation:item.claimTextAtCreation})),activity:value.activity.map((item)=>({id:item.id,actor:item.actor,message:item.message,revision:item.revision}))};
 }
 
 export function loadWorkspace(storage:StorageLike):WorkspaceLoadResult{
@@ -54,7 +60,7 @@ export function loadWorkspace(storage:StorageLike):WorkspaceLoadResult{
 }
 
 export function parseWorkspaceJson(raw:string):WorkspaceParseResult{
-  try{const parsed:unknown=normalizeLegacyFacts(JSON.parse(raw));return validWorkspace(parsed)?{ok:true,workspace:parsed}:{ok:false,error:"Workspace does not match schema version 1."}}catch(error){return {ok:false,error:error instanceof Error?error.message:"Workspace JSON could not be read."}}
+  try{const parsed:unknown=normalizeLegacyFacts(JSON.parse(raw));return validWorkspace(parsed)?{ok:true,workspace:normalizedWorkspace(parsed)}:{ok:false,error:"Workspace does not match schema version 1."}}catch(error){return {ok:false,error:error instanceof Error?error.message:"Workspace JSON could not be read."}}
 }
 
 export function saveWorkspace(storage:StorageLike,workspace:Workspace):string|null{

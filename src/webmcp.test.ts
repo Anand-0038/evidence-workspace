@@ -20,6 +20,10 @@ describe("WebMCP contracts",()=>{
     expect(serializedShared).not.toContain("Reviewer timing table");
     expect(serializedShared).not.toContain("Across 31 reviewed briefs");
     expect(serializedShared).not.toContain("sourceExcerpt");
+    (workspace.claims[0] as Workspace["claims"][number]&{auditSecret:string}).auditSecret="claim-secret";
+    (workspace.evidence[0] as Workspace["evidence"][number]&{privateSecret:string}).privateSecret="evidence-secret";
+    const listClaims=tools.find((tool)=>tool.name==="review_list_claims")!;
+    expect(JSON.stringify(await listClaims.execute({},{signal:new AbortController().signal}))).not.toContain("claim-secret");
     expect(workspace.revision).toBe(1);
     const link=tools.find((tool)=>tool.name==="review_link_evidence")!;
     const response=await link.execute({expectedRevision:99,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The source contains a different value."},{signal:new AbortController().signal}) as {ok:boolean;workspaceRevision:number};

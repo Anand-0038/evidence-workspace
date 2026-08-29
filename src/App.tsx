@@ -69,7 +69,7 @@ export function App(){
         <p className="subhead">Resolve every claim against exact evidence. The browser agent may stage work; only you can approve it.</p>
       </div>
       <div className="header-actions">
-        <span className={`capability ${toolStatus==="registered"?"available":"unavailable"}`}>{toolStatus==="registered"?"Site tools registered":toolStatus==="registering"?"Registering site tools":toolStatus==="error"?"Site tool error":"WebMCP unavailable"}</span>
+        <span className="capability-wrap"><span className={`capability ${toolStatus==="registered"?"available":"unavailable"}`}>{toolStatus==="registered"?"Site tools registered":toolStatus==="registering"?"Registering site tools":toolStatus==="error"?"Site tool error":"WebMCP unavailable"}</span>{toolStatus==="unavailable"&&<small>Chrome 149+: enable WebMCP testing and restart.</small>}</span>
         <button className="text-button primary-text-button" onClick={()=>setBuilderMode("new")}>New review</button>
         <button className="text-button" disabled={Boolean(proposal)} onClick={()=>setBuilderMode("claim")}>Add claim</button>
         <button className="text-button" disabled={Boolean(proposal)} onClick={()=>setBuilderMode("evidence")}>Add evidence</button>

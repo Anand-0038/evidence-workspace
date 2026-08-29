@@ -40,7 +40,11 @@ const closeEnough=(left:number,right:number)=>Math.abs(left-right)<=0.01;
 const rounded=(value:number)=>Math.round(value*100)/100;
 const check=(id:string,label:string,status:CheckStatus,detail:string,expected?:string|number,actual?:string|number):VerificationCheck=>({id,label,status,detail,...(expected===undefined?{}:{expected}),...(actual===undefined?{}:{actual})});
 const assertionValues=(assertion:QuantitativeAssertion)=>assertion.kind==="percentage_change"?[assertion.claimedPercent]:assertion.kind==="before_after"?[assertion.baseline,assertion.observed]:[assertion.claimedValue];
-const numericValues=(text:string)=>(text.match(/-?\d+(?:\.\d+)?/g)??[]).map(Number);
+const numericValues=(text:string)=>{
+  const tokens=text.match(/-?\d[\d,]*(?:\.\d+)?/g)??[];
+  if(tokens.some((token)=>token.includes(",")&&!/^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(token))) return [Number.NaN];
+  return tokens.map((token)=>Number(token.replaceAll(",","")));
+};
 const orderedValuesAppear=(text:string,values:number[])=>{const tokens=numericValues(text);let cursor=0;return values.every((required)=>{const offset=tokens.slice(cursor).findIndex((value)=>closeEnough(value,required));if(offset<0)return false;cursor+=offset+1;return true})};
 
 export function compileClaimVerification(workspace:Workspace,claimId:string):VerificationManifest {
@@ -72,7 +76,7 @@ export function compileClaimVerification(workspace:Workspace,claimId:string):Ver
   }else{
     checks.push(check("metric-match","Metric identity","pass",`Matched a typed fact from ${match.evidenceId}.`,claim.assertion.metric,match.fact.metric));
     const bindingPasses=matches.every(({fact,passage})=>{
-      const values=(fact.sourceExcerpt.match(/-?\d+(?:\.\d+)?/g)??[]).map(Number);
+      const values=numericValues(fact.sourceExcerpt);
       const requiredValues=fact.kind==="range"?[fact.baseline,fact.observed]:[fact.value];
       return passage.includes(fact.sourceExcerpt)&&requiredValues.every((required)=>values.some((value)=>closeEnough(value,required)));
     });
@@ -159,11 +163,12 @@ export function flagClaim(workspace:Workspace,claimId:string,state:Exclude<Claim
 export function proposeRevision(workspace:Workspace,claimId:string,proposedText:string,reason:string,proposedAssertion?:QuantitativeAssertion):Workspace {
   const claim=workspace.claims.find((item)=>item.id===claimId);
   if(!claim) throw new Error("Claim not found.");
+  if(workspace.proposals.some((item)=>item.claimId===claimId&&item.state==="pending")) throw new Error("A revision proposal is already pending for this claim.");
   if(proposedText.trim().length<10||proposedText.length>500) throw new Error("Proposed text must be 10–500 characters.");
   if(reason.trim().length<10||reason.length>300) throw new Error("Reason must be 10–300 characters.");
   const revision=nextRevision(workspace);
   const proposal:RevisionProposal={id:`proposal-${revision}`,claimId,proposedText:proposedText.trim(),...(proposedAssertion?{proposedAssertion}:{}),reason:reason.trim(),state:"pending",createdAt:new Date().toISOString(),basedOnRevision:revision,claimTextAtCreation:claim.text};
-  return {...workspace,revision,proposals:[...workspace.proposals.filter((item)=>item.claimId!==claimId||item.state!=="pending"),proposal],activity:[...workspace.activity,event(workspace,"agent",`Staged a revision for ${claimId}.`)]};
+  return {...workspace,revision,proposals:[...workspace.proposals,proposal],activity:[...workspace.activity,event(workspace,"agent",`Staged a revision for ${claimId}.`)]};
 }
 
 export function decideProposal(workspace:Workspace,proposalId:string,decision:"accepted"|"rejected"):Workspace {
@@ -173,7 +178,7 @@ export function decideProposal(workspace:Workspace,proposalId:string,decision:"a
   const currentClaim=workspace.claims.find((claim)=>claim.id===proposal.claimId);
   const staleProposal=workspace.revision!==proposal.basedOnRevision||currentClaim?.text!==proposal.claimTextAtCreation;
   if(decision==="accepted"&&staleProposal) throw new Error(`Proposal is stale. It was based on revision ${proposal.basedOnRevision}; current revision is ${workspace.revision}. Dismiss it and stage a new proposal.`);
-  const next:Workspace={...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===proposal.claimId?{...claim,text:decision==="accepted"?proposal.proposedText:claim.text,assertion:decision==="accepted"&&proposal.proposedAssertion?proposal.proposedAssertion:claim.assertion,humanDecision:decision==="accepted"?"approved":"rejected"}:claim),proposals:workspace.proposals.map((item)=>item.id===proposalId?{...item,state:decision}:item),activity:[...workspace.activity,event(workspace,"human",`${decision==="accepted"?"Approved":staleProposal?"Dismissed stale":"Rejected"} ${proposalId}.`)]};
+  const next:Workspace={...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===proposal.claimId?{...claim,text:decision==="accepted"?proposal.proposedText:claim.text,assertion:decision==="accepted"&&proposal.proposedAssertion?proposal.proposedAssertion:claim.assertion,rationale:decision==="accepted"?null:claim.rationale,humanDecision:decision==="accepted"?"approved":"rejected"}:claim),proposals:workspace.proposals.map((item)=>item.id===proposalId?{...item,state:decision}:item),activity:[...workspace.activity,event(workspace,"human",`${decision==="accepted"?"Approved":staleProposal?"Dismissed stale":"Rejected"} ${proposalId}.`)]};
   if(decision==="accepted"){
     const manifest=compileClaimVerification(next,proposal.claimId);
     next.claims=next.claims.map((claim)=>claim.id===proposal.claimId?{...claim,state:manifest.status==="pass"?"supported":"contradicted"}:claim);
