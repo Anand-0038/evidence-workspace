@@ -8,3 +8,6 @@ coverage/
 .next/
 .DS_Store
 hack/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

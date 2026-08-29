@@ -1,0 +1,193 @@
+export type ClaimState = "unreviewed" | "supported" | "contradicted" | "unsupported";
+export type HumanDecision = "pending" | "approved" | "rejected";
+export type ProposalState = "pending" | "accepted" | "rejected";
+export type CheckStatus = "pass" | "fail" | "blocked";
+
+export interface PercentageChangeAssertion { kind:"percentage_change"; metric:string; claimedPercent:number; unit:string; sourceWindow:string }
+export interface BeforeAfterAssertion { kind:"before_after"; metric:string; baseline:number; observed:number; unit:string; sourceWindow:string }
+export type QuantitativeAssertion = PercentageChangeAssertion | BeforeAfterAssertion;
+export interface SourceFact { metric:string; baseline:number; observed:number; unit:string; sourceWindow:string; sourceExcerpt:string }
+export interface Evidence { id:string; title:string; sourceLabel:string; passage:string; sharedWithAgent:boolean; kind:"primary"|"supporting"|"unknown"; facts:SourceFact[] }
+export interface Claim { id:string; text:string; state:ClaimState; linkedEvidenceIds:string[]; rationale:string|null; humanDecision:HumanDecision; assertion:QuantitativeAssertion }
+export interface RevisionProposal { id:string; claimId:string; proposedText:string; proposedAssertion?:QuantitativeAssertion; reason:string; state:ProposalState; createdAt:string; basedOnRevision:number; claimTextAtCreation:string }
+export interface ActivityEvent { id:string; actor:"human"|"agent"|"system"; message:string; revision:number }
+export interface Workspace { schemaVersion:1; revision:number; claims:Claim[]; evidence:Evidence[]; proposals:RevisionProposal[]; activity:ActivityEvent[] }
+export interface VerificationCheck { id:string; label:string; status:CheckStatus; detail:string; expected?:string|number; actual?:string|number }
+export interface VerificationManifest { schemaVersion:1; claimId:string; workspaceRevision:number; status:CheckStatus; sourceEvidenceIds:string[]; checks:VerificationCheck[] }
+export interface ReleaseCheck { ready:boolean; stage:0|1|2|3; blockers:string[] }
+
+export const exampleWorkspace: Workspace = {
+  schemaVersion:1, revision:1,
+  claims:[
+    {id:"claim-growth",text:"The pilot increased weekly completed reviews by 40%.",state:"unreviewed",linkedEvidenceIds:[],rationale:null,humanDecision:"pending",assertion:{kind:"percentage_change",metric:"weekly completed reviews",claimedPercent:40,unit:"reviews/week",sourceWindow:"four weekly cycles"}},
+    {id:"claim-time",text:"Median review time fell from 18 minutes to 11 minutes.",state:"unreviewed",linkedEvidenceIds:[],rationale:null,humanDecision:"pending",assertion:{kind:"before_after",metric:"median review time",baseline:18,observed:11,unit:"minutes",sourceWindow:"31 reviewed briefs"}}
+  ],
+  evidence:[
+    {id:"evidence-pilot-note",title:"Pilot close-out note",sourceLabel:"Internal pilot note · 12 Aug 2026 · authored example",passage:"Weekly completed reviews rose from 50 to 60 during the pilot, a 20% increase. The sample covered four weekly cycles and should not be treated as a long-term forecast.",sharedWithAgent:true,kind:"primary",facts:[{metric:"weekly completed reviews",baseline:50,observed:60,unit:"reviews/week",sourceWindow:"four weekly cycles",sourceExcerpt:"Weekly completed reviews rose from 50 to 60 during the pilot, a 20% increase."}]},
+    {id:"evidence-timing",title:"Reviewer timing table",sourceLabel:"Timing study · 14 Aug 2026 · authored example",passage:"Across 31 reviewed briefs, median handling time was 11 minutes, compared with an 18-minute baseline collected in July.",sharedWithAgent:false,kind:"primary",facts:[{metric:"median review time",baseline:18,observed:11,unit:"minutes",sourceWindow:"31 reviewed briefs",sourceExcerpt:"Across 31 reviewed briefs, median handling time was 11 minutes, compared with an 18-minute baseline collected in July."}]}
+  ],
+  proposals:[], activity:[{id:"event-open",actor:"system",message:"Example workspace opened.",revision:1}]
+};
+
+const nextRevision=(workspace:Workspace)=>workspace.revision+1;
+const event=(workspace:Workspace,actor:ActivityEvent["actor"],message:string):ActivityEvent=>({id:`event-${workspace.revision+1}-${workspace.activity.length+1}`,actor,message,revision:nextRevision(workspace)});
+const normalized=(value:string)=>value.trim().toLocaleLowerCase();
+const closeEnough=(left:number,right:number)=>Math.abs(left-right)<=0.01;
+const rounded=(value:number)=>Math.round(value*100)/100;
+const check=(id:string,label:string,status:CheckStatus,detail:string,expected?:string|number,actual?:string|number):VerificationCheck=>({id,label,status,detail,...(expected===undefined?{}:{expected}),...(actual===undefined?{}:{actual})});
+
+export function compileClaimVerification(workspace:Workspace,claimId:string):VerificationManifest {
+  const claim=workspace.claims.find((item)=>item.id===claimId);
+  if(!claim) throw new Error("Claim not found.");
+  const linkedEvidence=claim.linkedEvidenceIds.map((id)=>workspace.evidence.find((item)=>item.id===id)).filter((item):item is Evidence=>Boolean(item));
+  const missingEvidenceIds=claim.linkedEvidenceIds.filter((id)=>!workspace.evidence.some((item)=>item.id===id));
+  const sharedEvidence=linkedEvidence.filter((item)=>item.sharedWithAgent);
+  const coveragePasses=claim.linkedEvidenceIds.length>0&&missingEvidenceIds.length===0&&sharedEvidence.length===linkedEvidence.length;
+  const coverageDetail=coveragePasses?`${sharedEvidence.length} linked source${sharedEvidence.length===1?" is":"s are"} available to the compiler.`:claim.linkedEvidenceIds.length===0?"No evidence is linked to this claim.":missingEvidenceIds.length?`Missing referenced evidence: ${missingEvidenceIds.join(", ")}.`:"At least one linked source is private and cannot be compiled.";
+  const checks:VerificationCheck[]=[check("source-coverage","Shared source coverage",coveragePasses?"pass":"fail",coverageDetail,"all linked sources resolved and shared",`${sharedEvidence.length}/${claim.linkedEvidenceIds.length}`)];
+  const facts=sharedEvidence.flatMap((evidence)=>evidence.facts.map((fact)=>({fact,evidenceId:evidence.id,passage:evidence.passage})));
+  const matches=facts.filter(({fact})=>normalized(fact.metric)===normalized(claim.assertion.metric));
+  const match=matches[0];
+  if(!match){
+    checks.push(check("metric-match","Metric identity",coveragePasses?"fail":"blocked",coveragePasses?"No structured source fact matches the claim metric.":"Link and share evidence before matching the metric.",claim.assertion.metric));
+    checks.push(check("source-binding","Exact excerpt binding","blocked","A matching source fact is required first."),check("source-conflict","Cross-source consistency","blocked","A matching source fact is required first."),check("unit-match","Unit consistency","blocked","A matching source fact is required first."),check("window-match","Scope consistency","blocked","A matching source fact is required first."),check("value-check","Quantitative value","blocked","A matching source fact is required first."));
+  }else{
+    checks.push(check("metric-match","Metric identity","pass",`Matched a typed fact from ${match.evidenceId}.`,claim.assertion.metric,match.fact.metric));
+    const bindingPasses=matches.every(({fact,passage})=>{
+      const values=(fact.sourceExcerpt.match(/-?\d+(?:\.\d+)?/g)??[]).map(Number);
+      return passage.includes(fact.sourceExcerpt)&&values.some((value)=>closeEnough(value,fact.baseline))&&values.some((value)=>closeEnough(value,fact.observed));
+    });
+    checks.push(check("source-binding","Exact excerpt binding",bindingPasses?"pass":"fail",bindingPasses?"Every typed fact is bound to an exact source excerpt containing both values.":"A typed fact is missing from its cited passage or its values are not present in the exact excerpt."));
+    const firstFact=match.fact;
+    const sourcesAgree=matches.every(({fact})=>closeEnough(fact.baseline,firstFact.baseline)&&closeEnough(fact.observed,firstFact.observed)&&normalized(fact.unit)===normalized(firstFact.unit)&&normalized(fact.sourceWindow)===normalized(firstFact.sourceWindow));
+    checks.push(check("source-conflict","Cross-source consistency",sourcesAgree?"pass":"fail",sourcesAgree?`${matches.length} matching source fact${matches.length===1?" has":"s have"} no quantitative conflict.`:"Linked sources disagree on values, units, or evaluation scope.","matching linked sources agree",sourcesAgree?"agree":"conflict"));
+    const unitPasses=normalized(match.fact.unit)===normalized(claim.assertion.unit);
+    checks.push(check("unit-match","Unit consistency",unitPasses?"pass":"fail",unitPasses?"Claim and source use the same unit.":"Claim and source units differ.",match.fact.unit,claim.assertion.unit));
+    const windowPasses=normalized(match.fact.sourceWindow)===normalized(claim.assertion.sourceWindow);
+    checks.push(check("window-match","Scope consistency",windowPasses?"pass":"fail",windowPasses?"The claim preserves the source evaluation window.":"The claim scope does not match the source window.",match.fact.sourceWindow,claim.assertion.sourceWindow));
+    if(claim.assertion.kind==="percentage_change"){
+      const actualPercent=rounded(((match.fact.observed-match.fact.baseline)/match.fact.baseline)*100);
+      const arithmeticPasses=Number.isFinite(actualPercent)&&closeEnough(actualPercent,claim.assertion.claimedPercent);
+      checks.push(check("value-check","Percentage arithmetic",arithmeticPasses?"pass":"fail",arithmeticPasses?`(${match.fact.observed} − ${match.fact.baseline}) / ${match.fact.baseline} resolves to the claimed change.`:`The source values resolve to ${actualPercent}%, not ${claim.assertion.claimedPercent}%.`,actualPercent,claim.assertion.claimedPercent));
+    }else{
+      const baselinePasses=closeEnough(match.fact.baseline,claim.assertion.baseline);
+      const observedPasses=closeEnough(match.fact.observed,claim.assertion.observed);
+      checks.push(check("value-check","Before/after values",baselinePasses&&observedPasses?"pass":"fail",baselinePasses&&observedPasses?"Both quantitative values match the source fact.":"At least one quantitative value differs from the source fact.",`${match.fact.baseline} → ${match.fact.observed}`,`${claim.assertion.baseline} → ${claim.assertion.observed}`));
+    }
+  }
+  const status:CheckStatus=checks.some((item)=>item.status==="fail")?"fail":checks.some((item)=>item.status==="blocked")?"blocked":"pass";
+  return {schemaVersion:1,claimId,workspaceRevision:workspace.revision,status,sourceEvidenceIds:sharedEvidence.map((item)=>item.id),checks};
+}
+
+export function getReleaseCheck(workspace:Workspace):ReleaseCheck {
+  const blockers:string[]=[];
+  if(workspace.claims.length===0) return {ready:false,stage:0,blockers:["workspace: at least one claim is required"]};
+  const manifests=workspace.claims.map((claim)=>compileClaimVerification(workspace,claim.id));
+  const linkedCount=workspace.claims.filter((claim)=>claim.linkedEvidenceIds.length>0).length;
+  workspace.claims.forEach((claim,index)=>{
+    const manifest=manifests[index];
+    if(claim.linkedEvidenceIds.length===0) blockers.push(`${claim.id}: no evidence linked`);
+    if(manifest.status!=="pass"){const firstFailure=manifest.checks.find((item)=>item.status!=="pass");blockers.push(`${claim.id}: compiler ${manifest.status}${firstFailure?` — ${firstFailure.label}`:""}`)}
+    if(claim.state==="unreviewed") blockers.push(`${claim.id}: agent review pending`);
+    if(claim.state==="unsupported") blockers.push(`${claim.id}: unsupported`);
+    if(claim.state==="contradicted"&&claim.humanDecision!=="approved") blockers.push(`${claim.id}: human decision required`);
+    if(claim.state==="supported"&&claim.humanDecision!=="approved") blockers.push(`${claim.id}: human confirmation required`);
+  });
+  const pending=workspace.proposals.some((proposal)=>proposal.state==="pending");
+  if(pending) blockers.push("revision proposal awaiting human decision");
+  const allReviewed=workspace.claims.every((claim)=>claim.state!=="unreviewed");
+  const allCompiled=manifests.every((manifest)=>manifest.status==="pass");
+  const allResolved=workspace.claims.every((claim)=>claim.state==="supported"&&claim.humanDecision==="approved")&&allCompiled;
+  const stage:ReleaseCheck["stage"]=allResolved&&!pending?3:allReviewed&&allCompiled?2:linkedCount===workspace.claims.length?1:0;
+  return {ready:stage===3&&blockers.length===0,stage,blockers};
+}
+
+export function linkEvidence(workspace:Workspace,claimId:string,evidenceId:string,rationale:string):Workspace {
+  const source=workspace.evidence.find((item)=>item.id===evidenceId);
+  if(!source) throw new Error("Evidence not found.");
+  if(!source.sharedWithAgent) throw new Error("Evidence is private. A human must share it first.");
+  if(!workspace.claims.some((claim)=>claim.id===claimId)) throw new Error("Claim not found.");
+  if(rationale.trim().length<10||rationale.length>300) throw new Error("Rationale must be 10–300 characters.");
+  return {...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===claimId?{...claim,linkedEvidenceIds:[...new Set([...claim.linkedEvidenceIds,evidenceId])],rationale:rationale.trim()}:claim),activity:[...workspace.activity,event(workspace,"agent",`Linked ${evidenceId} to ${claimId}.`)]};
+}
+
+export function flagClaim(workspace:Workspace,claimId:string,state:Exclude<ClaimState,"unreviewed">,rationale:string):Workspace {
+  if(!workspace.claims.some((claim)=>claim.id===claimId)) throw new Error("Claim not found.");
+  if(!(["supported","contradicted","unsupported"] as string[]).includes(state)) throw new Error("Invalid claim review state.");
+  if(rationale.trim().length<10||rationale.length>300) throw new Error("Rationale must be 10–300 characters.");
+  const manifest=compileClaimVerification(workspace,claimId);
+  if(state==="supported"&&manifest.status!=="pass") throw new Error("A claim cannot be marked supported until every deterministic check passes.");
+  return {...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===claimId?{...claim,state,rationale:rationale.trim(),humanDecision:"pending"}:claim),activity:[...workspace.activity,event(workspace,"agent",`Marked ${claimId} ${state} after compiler review.`)]};
+}
+
+export function proposeRevision(workspace:Workspace,claimId:string,proposedText:string,reason:string,proposedAssertion?:QuantitativeAssertion):Workspace {
+  const claim=workspace.claims.find((item)=>item.id===claimId);
+  if(!claim) throw new Error("Claim not found.");
+  if(proposedText.trim().length<10||proposedText.length>500) throw new Error("Proposed text must be 10–500 characters.");
+  if(reason.trim().length<10||reason.length>300) throw new Error("Reason must be 10–300 characters.");
+  const revision=nextRevision(workspace);
+  const proposal:RevisionProposal={id:`proposal-${revision}`,claimId,proposedText:proposedText.trim(),...(proposedAssertion?{proposedAssertion}:{}),reason:reason.trim(),state:"pending",createdAt:new Date().toISOString(),basedOnRevision:revision,claimTextAtCreation:claim.text};
+  return {...workspace,revision,proposals:[...workspace.proposals.filter((item)=>item.claimId!==claimId||item.state!=="pending"),proposal],activity:[...workspace.activity,event(workspace,"agent",`Staged a revision for ${claimId}.`)]};
+}
+
+export function decideProposal(workspace:Workspace,proposalId:string,decision:"accepted"|"rejected"):Workspace {
+  const proposal=workspace.proposals.find((item)=>item.id===proposalId&&item.state==="pending");
+  if(!proposal) throw new Error("Pending proposal not found.");
+  if(!(["accepted","rejected"] as string[]).includes(decision)) throw new Error("Invalid proposal decision.");
+  const currentClaim=workspace.claims.find((claim)=>claim.id===proposal.claimId);
+  if(workspace.revision!==proposal.basedOnRevision||currentClaim?.text!==proposal.claimTextAtCreation) throw new Error(`Proposal is stale. It was based on revision ${proposal.basedOnRevision}; current revision is ${workspace.revision}.`);
+  const next:Workspace={...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===proposal.claimId?{...claim,text:decision==="accepted"?proposal.proposedText:claim.text,assertion:decision==="accepted"&&proposal.proposedAssertion?proposal.proposedAssertion:claim.assertion,humanDecision:decision==="accepted"?"approved":"rejected"}:claim),proposals:workspace.proposals.map((item)=>item.id===proposalId?{...item,state:decision}:item),activity:[...workspace.activity,event(workspace,"human",`${decision==="accepted"?"Approved":"Rejected"} ${proposalId}.`)]};
+  if(decision==="accepted"){
+    const manifest=compileClaimVerification(next,proposal.claimId);
+    next.claims=next.claims.map((claim)=>claim.id===proposal.claimId?{...claim,state:manifest.status==="pass"?"supported":"contradicted"}:claim);
+  }
+  return next;
+}
+
+export function confirmClaim(workspace:Workspace,claimId:string):Workspace {
+  const claim=workspace.claims.find((item)=>item.id===claimId);
+  if(!claim) throw new Error("Claim not found.");
+  if(claim.state!=="supported") throw new Error("Only a compiler-supported claim can be confirmed.");
+  if(compileClaimVerification(workspace,claimId).status!=="pass") throw new Error("Every deterministic check must pass before human confirmation.");
+  if(claim.humanDecision==="approved") return workspace;
+  return {...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((item)=>item.id===claimId?{...item,humanDecision:"approved"}:item),activity:[...workspace.activity,event(workspace,"human",`Confirmed compiled finding for ${claimId}.`)]};
+}
+
+export function toggleEvidenceSharing(workspace:Workspace,evidenceId:string):Workspace {
+  const target=workspace.evidence.find((item)=>item.id===evidenceId);
+  if(!target) throw new Error("Evidence not found.");
+  return {...workspace,revision:nextRevision(workspace),evidence:workspace.evidence.map((item)=>item.id===evidenceId?{...item,sharedWithAgent:!item.sharedWithAgent}:item),activity:[...workspace.activity,event(workspace,"human",`${target.sharedWithAgent?"Made private":"Shared"} ${evidenceId}.`)]};
+}
+
+export function runExampleAgentReview(workspace:Workspace):Workspace {
+  const growth=workspace.claims.find((claim)=>claim.id==="claim-growth");
+  if(growth?.state==="unreviewed"){
+    let next=linkEvidence(workspace,"claim-growth","evidence-pilot-note","Compile the stated percentage against the linked source values.");
+    const manifest=compileClaimVerification(next,"claim-growth");
+    const failure=manifest.checks.find((item)=>item.status==="fail");
+    next=flagClaim(next,"claim-growth","contradicted",failure?.detail??"The quantitative compiler found a source mismatch.");
+    return proposeRevision(next,"claim-growth","The pilot increased weekly completed reviews by 20% across four weekly cycles.","Use the computed change and preserve the source evaluation window.",{kind:"percentage_change",metric:"weekly completed reviews",claimedPercent:20,unit:"reviews/week",sourceWindow:"four weekly cycles"});
+  }
+  const timing=workspace.claims.find((claim)=>claim.id==="claim-time");
+  if(timing?.state==="unreviewed"){
+    let next=linkEvidence(workspace,"claim-time","evidence-timing","Compile both timing values against the linked timing table.");
+    const manifest=compileClaimVerification(next,"claim-time");
+    if(manifest.status!=="pass") throw new Error("The timing claim did not pass deterministic verification.");
+    next=flagClaim(next,"claim-time","supported","Metric, unit, scope, baseline, and observed value all pass deterministic checks.");
+    return next;
+  }
+  throw new Error("Every example claim has already been reviewed.");
+}
+
+export function createVerificationPacket(workspace:Workspace){return {schemaVersion:1 as const,compilerVersion:"0.1.0" as const,workspaceRevision:workspace.revision,release:getReleaseCheck(workspace),manifests:workspace.claims.map((claim)=>compileClaimVerification(workspace,claim.id))}}
+
+export function createExportPacket(workspace:Workspace):string {
+  const verification=createVerificationPacket(workspace);
+  if(!verification.release.ready) throw new Error(`Export is locked: ${verification.release.blockers[0]??"release requirements are incomplete"}.`);
+  const claims=workspace.claims.map((claim,index)=>{
+    const sources=claim.linkedEvidenceIds.map((id)=>workspace.evidence.find((item)=>item.id===id)).filter((item):item is Evidence=>Boolean(item));
+    const manifest=verification.manifests.find((item)=>item.claimId===claim.id)!;
+    return [`## ${index+1}. ${claim.text}`,`Review state: ${claim.state}`,`Human decision: ${claim.humanDecision}`,`Compiler status: ${manifest.status} (${manifest.checks.filter((item)=>item.status==="pass").length}/${manifest.checks.length} checks passed)`,`Rationale: ${claim.rationale??"None recorded"}`,...sources.flatMap((source)=>[`Source: ${source.title} — ${source.sourceLabel}`,`> ${source.passage}`])].join("\n\n");
+  }).join("\n\n---\n\n");
+  return ["# Verified report packet",`Workspace revision: ${workspace.revision}`,"Release check: passed","Generated locally. Evidence selection and the final release decision remain the reviewer's responsibility.",claims,"## Machine-readable verification manifest","```json",JSON.stringify(verification,null,2),"```","## Revision activity",...workspace.activity.map((item)=>`- r${item.revision} · ${item.actor}: ${item.message}`)].join("\n\n");
+}
