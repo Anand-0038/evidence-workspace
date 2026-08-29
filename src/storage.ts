@@ -38,11 +38,13 @@ function validWorkspace(value:unknown):value is Workspace{
   const claimIds=new Set((value.claims as Array<{id:string}>).map((item)=>item.id));
   const evidenceIds=new Set((value.evidence as Array<{id:string}>).map((item)=>item.id));
   const proposalIds=new Set((value.proposals as Array<{id:string}>).map((item)=>item.id));
+  const activityIds=(value.activity as Array<{id:string}>).map((item)=>item.id);
   const pendingClaimIds=(value.proposals as Array<{claimId:string;state:string}>).filter((item)=>item.state==="pending").map((item)=>item.claimId);
   const activityRevisions=(value.activity as Array<{revision:number}>).map((item)=>item.revision);
-  const activityOrderValid=activityRevisions.every((revision,index)=>revision<=(value.revision as number)&&(index===0||revision>=activityRevisions[index-1]));
+  const activityOrderValid=activityRevisions.every((revision,index)=>revision>=1&&revision<=(value.revision as number)&&(index===0||revision>=activityRevisions[index-1]));
+  const relationshipsUnique=(value.claims as Array<{linkedEvidenceIds:string[]}>).every((claim)=>new Set(claim.linkedEvidenceIds).size===claim.linkedEvidenceIds.length);
   const referencesValid=(value.claims as Array<{linkedEvidenceIds:string[]}>).every((claim)=>claim.linkedEvidenceIds.every((id)=>evidenceIds.has(id)))&&(value.proposals as Array<{claimId:string;state:string;basedOnRevision:number;claimTextAtCreation:string}>).every((proposal)=>{const claim=(value.claims as Array<{id:string;text:string}>).find((item)=>item.id===proposal.claimId);return Boolean(claim)&&proposal.basedOnRevision>=1&&proposal.basedOnRevision<=(value.revision as number)&&(proposal.state!=="pending"||(proposal.basedOnRevision===value.revision&&proposal.claimTextAtCreation===claim?.text))});
-  return claimIds.size===value.claims.length&&evidenceIds.size===value.evidence.length&&proposalIds.size===value.proposals.length&&new Set(pendingClaimIds).size===pendingClaimIds.length&&activityOrderValid&&referencesValid;
+  return claimIds.size===value.claims.length&&evidenceIds.size===value.evidence.length&&proposalIds.size===value.proposals.length&&new Set(activityIds).size===activityIds.length&&relationshipsUnique&&new Set(pendingClaimIds).size===pendingClaimIds.length&&activityOrderValid&&referencesValid;
 }
 
 function normalizedWorkspace(value:Workspace):Workspace{

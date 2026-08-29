@@ -1,4 +1,4 @@
-import type { Claim, Evidence, QuantitativeAssertion, SourceFact, Workspace } from "./domain";
+import {nextWorkspaceRevision,type Claim,type Evidence,type QuantitativeAssertion,type SourceFact,type Workspace} from "./domain";
 
 export type AssertionKind=QuantitativeAssertion["kind"];
 export interface ClaimDraft { text:string; kind:AssertionKind; metric:string; unit:string; sourceWindow:string; claimedPercent:string; baseline:string; observed:string; claimedValue:string }
@@ -7,13 +7,13 @@ export interface NewReviewDraft { title:string; claim:ClaimDraft; evidence:Evide
 export interface ValidationIssue { path:string; message:string }
 export type ValidationResult<T>={ok:true;value:T}|{ok:false;issues:ValidationIssue[]};
 
-const plainNumber=/^-?(?:\d+(?:\.\d*)?|\.\d+)$/;
+const canonicalNumber=/^-?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d*)?|\.\d+)$/;
 const trimmed=(value:string)=>value.trim();
 const issue=(path:string,message:string):ValidationIssue=>({path,message});
 const text=(issues:ValidationIssue[],path:string,value:string,min:number,max:number,label:string)=>{const clean=trimmed(value);if(clean.length<min)issues.push(issue(path,`${label} must be at least ${min} characters.`));else if(clean.length>max)issues.push(issue(path,`${label} must be ${max} characters or fewer.`));return clean};
-const number=(issues:ValidationIssue[],path:string,value:string,label:string)=>{const clean=trimmed(value);if(!plainNumber.test(clean)){issues.push(issue(path,`${label} must be a plain finite number.`));return null}const parsed=Number(clean);if(!Number.isFinite(parsed)){issues.push(issue(path,`${label} must be finite.`));return null}return parsed};
+const number=(issues:ValidationIssue[],path:string,value:string,label:string)=>{const clean=trimmed(value);if(!canonicalNumber.test(clean)){issues.push(issue(path,`${label} must be a finite number with optional standard thousands grouping.`));return null}const parsed=Number(clean.replaceAll(",",""));if(!Number.isFinite(parsed)){issues.push(issue(path,`${label} must be finite.`));return null}return parsed};
 const id=(prefix:string,existing:string[])=>{let index=1;while(existing.includes(`${prefix}-${index}`))index+=1;return `${prefix}-${index}`};
-const valuesInExcerpt=(excerpt:string,required:number[])=>{const values=(excerpt.match(/-?\d+(?:\.\d+)?/g)??[]).map(Number);return required.every((requiredValue)=>values.some((value)=>Math.abs(value-requiredValue)<=0.01))};
+const valuesInExcerpt=(excerpt:string,required:number[])=>{const tokens=excerpt.match(/-?\d[\d,]*(?:\.\d+)?/g)??[];if(tokens.some((token)=>token.includes(",")&&!/^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(token)))return false;const values=tokens.map((token)=>Number(token.replaceAll(",","")));return required.every((requiredValue)=>values.some((value)=>Math.abs(value-requiredValue)<=0.01))};
 
 export function buildAssertion(draft:ClaimDraft):ValidationResult<QuantitativeAssertion>{
   const issues:ValidationIssue[]=[];
@@ -60,13 +60,13 @@ export function createNewReview(draft:NewReviewDraft):ValidationResult<Workspace
 
 export function addClaim(workspace:Workspace,draft:ClaimDraft):ValidationResult<Workspace>{
   const assertion=buildAssertion(draft);if(!assertion.ok)return assertion;
-  const claimId=id("claim",workspace.claims.map((item)=>item.id));const revision=workspace.revision+1;
+  const claimId=id("claim",workspace.claims.map((item)=>item.id));let revision:number;try{revision=nextWorkspaceRevision(workspace)}catch(error){return {ok:false,issues:[issue("workspace.revision",error instanceof Error?error.message:"Workspace revision limit reached.")]}};
   return {ok:true,value:{...workspace,revision,claims:[...workspace.claims,claimFrom(draft,assertion.value,claimId)],activity:[...workspace.activity,{id:`event-${revision}-${workspace.activity.length+1}`,actor:"human",message:`Added ${claimId} to the local review.`,revision}]}};
 }
 
 export function addEvidence(workspace:Workspace,draft:EvidenceDraft):ValidationResult<Workspace>{
   const built=buildEvidence(draft);if(!built.ok)return built;
   if(draft.linkClaimId&&!workspace.claims.some((claim)=>claim.id===draft.linkClaimId))return {ok:false,issues:[issue("evidence.linkClaimId","Selected claim does not exist.")]};
-  const evidenceId=id("evidence",workspace.evidence.map((item)=>item.id));const revision=workspace.revision+1;
+  const evidenceId=id("evidence",workspace.evidence.map((item)=>item.id));let revision:number;try{revision=nextWorkspaceRevision(workspace)}catch(error){return {ok:false,issues:[issue("workspace.revision",error instanceof Error?error.message:"Workspace revision limit reached.")]}};
   return {ok:true,value:{...workspace,revision,evidence:[...workspace.evidence,{id:evidenceId,...built.value.evidence}],claims:workspace.claims.map((claim)=>claim.id===draft.linkClaimId?{...claim,linkedEvidenceIds:[...claim.linkedEvidenceIds,evidenceId],state:"unreviewed",rationale:null,humanDecision:"pending"}:claim),activity:[...workspace.activity,{id:`event-${revision}-${workspace.activity.length+1}`,actor:"human",message:`Added ${evidenceId}${draft.linkClaimId?` and linked it to ${draft.linkClaimId}; prior decisions were invalidated`:""}.`,revision}]}};
 }

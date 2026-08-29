@@ -33,7 +33,8 @@ export const exampleWorkspace: Workspace = {
   proposals:[], activity:[{id:"event-open",actor:"system",message:"Example workspace opened.",revision:1}]
 };
 
-const nextRevision=(workspace:Workspace)=>workspace.revision+1;
+export const nextWorkspaceRevision=(workspace:Workspace)=>{const revision=workspace.revision+1;if(!Number.isSafeInteger(revision)||revision>=Number.MAX_SAFE_INTEGER)throw new Error("Workspace revision limit reached; export and start a new review.");return revision};
+const nextRevision=nextWorkspaceRevision;
 const event=(workspace:Workspace,actor:ActivityEvent["actor"],message:string):ActivityEvent=>({id:`event-${workspace.revision+1}-${workspace.activity.length+1}`,actor,message,revision:nextRevision(workspace)});
 const normalized=(value:string)=>value.trim().toLowerCase();
 const closeEnough=(left:number,right:number)=>Math.abs(left-right)<=0.01;
