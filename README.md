@@ -50,6 +50,8 @@ corepack pnpm dev
 
 Open the printed local URL. The “Run next fixture agent step” control drives the same domain path for local walkthroughs, but it is explicitly not proof of a real WebMCP client call.
 
+Use **Export workspace JSON** to download the current typed workspace as a template. After replacing its claims, exact excerpts, and structured facts, use **Import workspace JSON** to load it locally. Imports are schema-validated, capped at 1 MB, persisted only in the browser, and rejected if claim state or assertion structure is malformed. Review every imported evidence-sharing flag before using site tools.
+
 ## Verify
 
 ```bash
@@ -67,7 +69,8 @@ Local headless-Chrome checks cover the contradiction-to-approval flow and 320px 
 - Chrome 150 WebMCP registration, discovery, read, visible write, stale denial, and private-evidence denial on the local origin: verified
 - ChatGPT WebMCP execution: unverified and optional for eligibility because Chrome is a supported testing route
 - Validated browser-local persistence: verified locally
-- User-supplied report ingestion: not implemented
+- Validated user-supplied workspace JSON import/export: verified locally
+- Raw Markdown/PDF extraction into typed assertions and exact excerpts: not implemented
 - Deployment, public repository, video, and submission: not completed
 
 ## License

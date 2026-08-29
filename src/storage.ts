@@ -5,6 +5,7 @@ export const CORRUPT_STORAGE_KEY="evidence-workspace.corrupt";
 
 interface StorageLike { getItem:(key:string)=>string|null; setItem:(key:string,value:string)=>void }
 export interface WorkspaceLoadResult { workspace:Workspace; warning:string|null; source:"default"|"storage"|"recovered" }
+export type WorkspaceParseResult={ok:true;workspace:Workspace}|{ok:false;error:string};
 
 const record=(value:unknown):value is Record<string,unknown>=>Boolean(value)&&typeof value==="object"&&!Array.isArray(value);
 const string=(value:unknown)=>typeof value==="string";
@@ -35,14 +36,16 @@ function validWorkspace(value:unknown):value is Workspace{
 export function loadWorkspace(storage:StorageLike):WorkspaceLoadResult{
   const raw=storage.getItem(WORKSPACE_STORAGE_KEY);
   if(raw===null) return {workspace:cloneExample(),warning:null,source:"default"};
-  try{
-    const parsed:unknown=JSON.parse(raw);
-    if(!validWorkspace(parsed)) throw new Error("Stored workspace does not match schema version 1.");
-    return {workspace:parsed,warning:null,source:"storage"};
-  }catch(error){
+  const parsed=parseWorkspaceJson(raw);
+  if(parsed.ok) return {workspace:parsed.workspace,warning:null,source:"storage"};
+  else{
     try{storage.setItem(CORRUPT_STORAGE_KEY,raw)}catch{ /* Recovery must still show the safe fixture. */ }
-    return {workspace:cloneExample(),warning:`Stored workspace was invalid and was replaced with the safe example. ${error instanceof Error?error.message:"The stored data could not be read."}`,source:"recovered"};
+    return {workspace:cloneExample(),warning:`Stored workspace was invalid and was replaced with the safe example. ${parsed.error}`,source:"recovered"};
   }
+}
+
+export function parseWorkspaceJson(raw:string):WorkspaceParseResult{
+  try{const parsed:unknown=JSON.parse(raw);return validWorkspace(parsed)?{ok:true,workspace:parsed}:{ok:false,error:"Workspace does not match schema version 1."}}catch(error){return {ok:false,error:error instanceof Error?error.message:"Workspace JSON could not be read."}}
 }
 
 export function saveWorkspace(storage:StorageLike,workspace:Workspace):string|null{

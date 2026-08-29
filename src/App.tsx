@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { compileClaimVerification, confirmClaim, createExportPacket, decideProposal, exampleWorkspace, getReleaseCheck, runExampleAgentReview, toggleEvidenceSharing, type Workspace } from "./domain";
 import { registerSiteTools, type SiteToolRuntime } from "./webmcp";
-import { loadWorkspace, saveWorkspace } from "./storage";
+import { loadWorkspace, parseWorkspaceJson, saveWorkspace } from "./storage";
 
 const stages=["Draft","Evidence linked","Human reviewed","Export ready"];
 const cloneExample=():Workspace=>structuredClone(exampleWorkspace);
@@ -11,9 +11,11 @@ export function App(){
   const [workspace,setWorkspace]=useState<Workspace>(initialLoad.workspace);
   const [selectedId,setSelectedId]=useState(initialLoad.workspace.claims[0]?.id??"");
   const [notice,setNotice]=useState<string|null>(initialLoad.warning);
+  const [materialLabel,setMaterialLabel]=useState(initialLoad.source==="storage"?"Saved local workspace":"Example workspace");
   const [toolStatus,setToolStatus]=useState<"unavailable"|"registering"|"registered"|"error">(()=>typeof document.modelContext?.registerTool==="function"?"registering":"unavailable");
   const workspaceRef=useRef(workspace);
   const toolRuntimeRef=useRef<SiteToolRuntime|null>(null);
+  const proposalHeadingRef=useRef<HTMLHeadingElement|null>(null);
   workspaceRef.current=workspace;
   const release=useMemo(()=>getReleaseCheck(workspace),[workspace]);
   const claim=workspace.claims.find((item)=>item.id===selectedId)??workspace.claims[0];
@@ -31,6 +33,7 @@ export function App(){
 
   useEffect(()=>{void toolRuntimeRef.current?.reconcileExport().catch((error)=>{setToolStatus("error");setNotice(error instanceof Error?`Export tool reconciliation failed: ${error.message}`:"Export tool reconciliation failed.")})},[workspace.revision]);
   useEffect(()=>{const warning=saveWorkspace(window.localStorage,workspace);if(warning)setNotice(warning)},[workspace]);
+  useEffect(()=>{if(proposal)proposalHeadingRef.current?.focus()},[proposal?.id]);
 
   const mutate=(operation:(current:Workspace)=>Workspace,message?:string)=>{
     try{setWorkspace((current)=>operation(current));setNotice(message??null)}catch(error){setNotice(error instanceof Error?error.message:"The operation failed.")}
@@ -41,8 +44,18 @@ export function App(){
       const url=URL.createObjectURL(blob);const anchor=document.createElement("a");anchor.href=url;anchor.download=`reviewed-report-r${workspace.revision}.md`;anchor.click();URL.revokeObjectURL(url);setNotice("Reviewed packet exported from the current revision.");
     }catch(error){setNotice(error instanceof Error?error.message:"Export failed.")}
   };
+  const exportWorkspaceJson=()=>{
+    const blob=new Blob([JSON.stringify(workspace,null,2)],{type:"application/json;charset=utf-8"});
+    const url=URL.createObjectURL(blob);const anchor=document.createElement("a");anchor.href=url;anchor.download=`evidence-workspace-r${workspace.revision}.json`;anchor.click();URL.revokeObjectURL(url);setNotice("Workspace JSON exported locally. No report was published.");
+  };
+  const importWorkspaceJson=async(event:ChangeEvent<HTMLInputElement>)=>{
+    const file=event.currentTarget.files?.[0];event.currentTarget.value="";
+    if(!file)return;
+    if(file.size>1_000_000){setNotice("Import rejected: workspace JSON must be 1 MB or smaller.");return}
+    try{const parsed=parseWorkspaceJson(await file.text());if(!parsed.ok){setNotice(`Import rejected: ${parsed.error}`);return}setWorkspace(parsed.workspace);setSelectedId(parsed.workspace.claims[0].id);setMaterialLabel("Imported local workspace");setNotice(`Imported ${parsed.workspace.claims.length} claims and ${parsed.workspace.evidence.length} evidence items. Review sharing permissions before using site tools.`)}catch(error){setNotice(error instanceof Error?`Import failed: ${error.message}`:"Import failed.")}
+  };
 
-  return <main className="app-shell">
+  return <><a className="skip-link" href="#main-content">Skip to review workspace</a><main id="main-content" className={`app-shell ${proposal?"has-proposal":""}`}>
     <header className="masthead">
       <div>
         <p className="kicker">Release desk / revision {workspace.revision}</p>
@@ -51,11 +64,13 @@ export function App(){
       </div>
       <div className="header-actions">
         <span className={`capability ${toolStatus==="registered"?"available":"unavailable"}`}>{toolStatus==="registered"?"Site tools registered":toolStatus==="registering"?"Registering site tools":toolStatus==="error"?"Site tool error":"WebMCP unavailable"}</span>
-        <button className="text-button" onClick={()=>{setWorkspace(cloneExample());setSelectedId("claim-growth");setNotice("Example workspace reset.")}}>Reset example</button>
+        <label className="text-button file-button">Import workspace JSON<input className="visually-hidden" type="file" accept="application/json,.json" onChange={importWorkspaceJson}/></label>
+        <button className="text-button" onClick={exportWorkspaceJson}>Export workspace JSON</button>
+        <button className="text-button" onClick={()=>{setWorkspace(cloneExample());setSelectedId("claim-growth");setMaterialLabel("Example workspace");setNotice("Example workspace reset.")}}>Reset example</button>
       </div>
     </header>
 
-    <aside className="fixture-note"><strong>Example workspace</strong> — authored fixture material. Replace it with your own evidence.</aside>
+    <aside className="fixture-note"><strong>{materialLabel}</strong> — browser-local material. Imported facts must remain bound to exact excerpts; review sharing permissions before agent use.</aside>
 
     <section className={`release-rail stage-${release.stage}`} aria-labelledby="release-title">
       <div className="release-copy"><p id="release-title" className="kicker">Release invariant</p><strong>{release.ready?"Packet unlocked":"Export locked"}</strong><span>{release.ready?"Every claim is compiled and resolved.":`${release.blockers[0]}${release.blockers.length>1?` · +${release.blockers.length-1} more`:""}`}</span></div>
@@ -63,7 +78,7 @@ export function App(){
       <button className="export-button" disabled={!release.ready} onClick={exportPacket}>Export reviewed packet</button>
     </section>
 
-    {notice&&<div className="notice" role="status">{notice}<button aria-label="Dismiss message" onClick={()=>setNotice(null)}>×</button></div>}
+    {notice&&<div className="notice" role="status" aria-live="polite">{notice}<button aria-label="Dismiss message" onClick={()=>setNotice(null)}>×</button></div>}
 
     <section className="proof-table" aria-label="Claim and evidence review">
       <div className="claims-column">
@@ -92,12 +107,12 @@ export function App(){
       </div>
     </section>
 
-    {proposal&&<section className="proposal-tray" aria-labelledby="proposal-title">
-      <div><p className="kicker">Human checkpoint / proposal {proposal.id}</p><h2 id="proposal-title">Revision staged, not applied</h2><p>{proposal.reason}</p></div>
+    {proposal&&<section className="proposal-tray" aria-labelledby="proposal-title" aria-live="polite">
+      <div><p className="kicker">Human checkpoint / proposal {proposal.id}</p><h2 id="proposal-title" ref={proposalHeadingRef} tabIndex={-1}>Revision staged, not applied</h2><p>{proposal.reason}</p></div>
       <blockquote>{proposal.proposedText}</blockquote>
       <div className="proposal-actions"><button className="reject" onClick={()=>mutate((current)=>decideProposal(current,proposal.id,"rejected"),"Revision rejected by human.")}>Reject revision</button><button className="approve" onClick={()=>mutate((current)=>decideProposal(current,proposal.id,"accepted"),"Revision approved by human.")}>Approve revision</button></div>
     </section>}
 
-    <section className="activity-ledger"><div><p className="kicker">Activity ledger</p><h2>Accountable changes</h2></div><ol>{workspace.activity.slice(-5).reverse().map((item)=><li key={item.id}><span className={`actor actor-${item.actor}`}>{item.actor}</span><span>{item.message}</span><code>r{item.revision}</code></li>)}</ol></section>
-  </main>;
+    <section className="activity-ledger"><div><p className="kicker">Activity ledger</p><h2>Accountable changes</h2><p className="ledger-count">All {workspace.activity.length} recorded events</p></div><ol>{[...workspace.activity].reverse().map((item)=><li key={item.id}><span className={`actor actor-${item.actor}`}>{item.actor}</span><span>{item.message}</span><code>r{item.revision}</code></li>)}</ol></section>
+  </main></>;
 }
