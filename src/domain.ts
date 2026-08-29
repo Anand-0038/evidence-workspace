@@ -121,7 +121,16 @@ export function linkEvidence(workspace:Workspace,claimId:string,evidenceId:strin
   if(!source.sharedWithAgent) throw new Error("Evidence is private. A human must share it first.");
   if(!workspace.claims.some((claim)=>claim.id===claimId)) throw new Error("Claim not found.");
   if(rationale.trim().length<10||rationale.length>300) throw new Error("Rationale must be 10–300 characters.");
-  return {...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===claimId?{...claim,linkedEvidenceIds:[...new Set([...claim.linkedEvidenceIds,evidenceId])],rationale:rationale.trim()}:claim),activity:[...workspace.activity,event(workspace,"agent",`Linked ${evidenceId} to ${claimId}.`)]};
+  return {...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===claimId?{...claim,linkedEvidenceIds:[...new Set([...claim.linkedEvidenceIds,evidenceId])],state:"unreviewed",rationale:rationale.trim(),humanDecision:"pending"}:claim),activity:[...workspace.activity,event(workspace,"agent",`Linked ${evidenceId} to ${claimId}; prior review decisions were invalidated.`)]};
+}
+
+export function unlinkEvidence(workspace:Workspace,claimId:string,evidenceId:string,rationale:string):Workspace {
+  const claim=workspace.claims.find((item)=>item.id===claimId);
+  if(!claim) throw new Error("Claim not found.");
+  if(!workspace.evidence.some((item)=>item.id===evidenceId)) throw new Error("Evidence not found.");
+  if(!claim.linkedEvidenceIds.includes(evidenceId)) throw new Error("Evidence is not linked to this claim.");
+  if(rationale.trim().length<10||rationale.length>300) throw new Error("Rationale must be 10–300 characters.");
+  return {...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((item)=>item.id===claimId?{...item,linkedEvidenceIds:item.linkedEvidenceIds.filter((id)=>id!==evidenceId),state:"unreviewed",rationale:rationale.trim(),humanDecision:"pending"}:item),activity:[...workspace.activity,event(workspace,"agent",`Unlinked ${evidenceId} from ${claimId}; prior review decisions were invalidated.`)]};
 }
 
 export function flagClaim(workspace:Workspace,claimId:string,state:Exclude<ClaimState,"unreviewed">,rationale:string):Workspace {

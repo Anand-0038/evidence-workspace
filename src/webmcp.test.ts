@@ -10,7 +10,7 @@ describe("WebMCP contracts",()=>{
     vi.stubGlobal("document",{modelContext});
     let workspace:Workspace=structuredClone(exampleWorkspace);
     const controller=await registerSiteTools(()=>workspace,(next)=>{workspace=next});
-    expect(tools.map((tool)=>tool.name)).toEqual(expect.arrayContaining(["review_get_summary","review_list_shared_evidence","review_get_claim_context","review_run_checks","review_link_evidence","review_flag_claim","review_propose_revision","review_get_release_check"]));
+    expect(tools.map((tool)=>tool.name)).toEqual(expect.arrayContaining(["review_get_summary","review_list_shared_evidence","review_get_claim_context","review_run_checks","review_link_evidence","review_unlink_evidence","review_flag_claim","review_propose_revision","review_get_release_check"]));
     expect(tools.map((tool)=>tool.name)).not.toContain("review_export_packet");
     expect(tools.every((tool)=>(tool.inputSchema as {additionalProperties?:boolean}).additionalProperties===false)).toBe(true);
     const listShared=tools.find((tool)=>tool.name==="review_list_shared_evidence")!;
