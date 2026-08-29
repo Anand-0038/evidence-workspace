@@ -17,6 +17,9 @@ describe("WebMCP contracts",()=>{
     const response=await link.execute({expectedRevision:99,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The source contains a different value."},{signal:new AbortController().signal}) as {ok:boolean;workspaceRevision:number};
     expect(response).toMatchObject({ok:false,workspaceRevision:1});
     expect(workspace.revision).toBe(1);
+    const nativeStyle=await (link.execute as unknown as (input:Record<string,unknown>)=>Promise<unknown>)({expectedRevision:1,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The native callback omitted its options object."}) as {ok:boolean;workspaceRevision:number};
+    expect(nativeStyle).toMatchObject({ok:true,workspaceRevision:2});
+    workspace=structuredClone(exampleWorkspace);
     const checks=tools.find((tool)=>tool.name==="review_run_checks")!;
     const beforeRevision=workspace.revision;
     const verification=await checks.execute({claimId:"claim-growth"},{signal:new AbortController().signal}) as {ok:boolean;verification:{status:string}};
