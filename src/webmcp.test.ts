@@ -10,9 +10,17 @@ describe("WebMCP contracts",()=>{
     vi.stubGlobal("document",{modelContext});
     let workspace:Workspace=structuredClone(exampleWorkspace);
     const controller=await registerSiteTools(()=>workspace,(next)=>{workspace=next});
-    expect(tools.map((tool)=>tool.name)).toEqual(expect.arrayContaining(["review_get_summary","review_get_claim_context","review_run_checks","review_link_evidence","review_flag_claim","review_propose_revision","review_get_release_check"]));
+    expect(tools.map((tool)=>tool.name)).toEqual(expect.arrayContaining(["review_get_summary","review_list_shared_evidence","review_get_claim_context","review_run_checks","review_link_evidence","review_flag_claim","review_propose_revision","review_get_release_check"]));
     expect(tools.map((tool)=>tool.name)).not.toContain("review_export_packet");
     expect(tools.every((tool)=>(tool.inputSchema as {additionalProperties?:boolean}).additionalProperties===false)).toBe(true);
+    const listShared=tools.find((tool)=>tool.name==="review_list_shared_evidence")!;
+    const sharedResponse=await listShared.execute({},{signal:new AbortController().signal}) as {ok:boolean;evidence:Array<Record<string,unknown>>};
+    expect(sharedResponse).toMatchObject({ok:true,evidence:[{id:"evidence-pilot-note",title:"Pilot close-out note",kind:"primary",facts:[{metric:"weekly completed reviews",unit:"reviews/week",sourceWindow:"four weekly cycles",values:{baseline:50,observed:60}}]}]});
+    const serializedShared=JSON.stringify(sharedResponse);
+    expect(serializedShared).not.toContain("Reviewer timing table");
+    expect(serializedShared).not.toContain("Across 31 reviewed briefs");
+    expect(serializedShared).not.toContain("sourceExcerpt");
+    expect(workspace.revision).toBe(1);
     const link=tools.find((tool)=>tool.name==="review_link_evidence")!;
     const response=await link.execute({expectedRevision:99,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The source contains a different value."},{signal:new AbortController().signal}) as {ok:boolean;workspaceRevision:number};
     expect(response).toMatchObject({ok:false,workspaceRevision:1});

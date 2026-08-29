@@ -8,7 +8,7 @@ export interface SiteToolRuntime { abort:()=>void; reconcileExport:()=>Promise<v
 const emptySchema={type:"object",properties:{},additionalProperties:false};
 const revisionProperty={type:"integer",minimum:1,description:"Current workspace revision shown by a read tool."};
 const claimIdProperty={type:"string",minLength:1,maxLength:80,description:"Exact claim ID returned by review_list_claims."};
-const evidenceIdProperty={type:"string",minLength:1,maxLength:80,description:"Exact evidence ID returned in claim context."};
+const evidenceIdProperty={type:"string",minLength:1,maxLength:80,description:"Exact evidence ID returned by review_list_shared_evidence or claim context."};
 const proposedAssertionProperty={type:"object",description:"Optional complete typed assertion for the proposed wording. Include it when quantitative values or scope change.",properties:{kind:{type:"string",enum:["percentage_change","before_after"]},metric:{type:"string",minLength:1,maxLength:120},claimedPercent:{type:"number"},baseline:{type:"number"},observed:{type:"number"},unit:{type:"string",minLength:1,maxLength:40},sourceWindow:{type:"string",minLength:1,maxLength:120}},required:["kind","metric","unit","sourceWindow"],additionalProperties:false};
 
 function result(workspace:Workspace,message:string,extra:Record<string,unknown>={}):ToolResult{
@@ -55,6 +55,10 @@ export async function registerSiteTools(read:WorkspaceReader,write:WorkspaceWrit
     register({
       name:"review_list_claims",title:"List report claims",description:"List claim IDs, exact draft wording, review state, linked evidence IDs, and human-decision state for the open report.",inputSchema:emptySchema,annotations:{readOnlyHint:true,untrustedContentHint:true},
       execute:async()=>{const workspace=read();return result(workspace,"Claims read.",{claims:workspace.claims})}
+    }),
+    register({
+      name:"review_list_shared_evidence",title:"List human-shared evidence",description:"List minimal metadata and typed fact summaries for evidence the human currently permits the agent to use. Private evidence and exact passages are never returned.",inputSchema:emptySchema,annotations:{readOnlyHint:true,untrustedContentHint:true},
+      execute:async()=>{const workspace=read();const evidence=workspace.evidence.filter((item)=>item.sharedWithAgent).map((item)=>({id:item.id,title:item.title,sourceLabel:item.sourceLabel,kind:item.kind,facts:item.facts.map((fact)=>({metric:fact.metric,unit:fact.unit,sourceWindow:fact.sourceWindow,values:{baseline:fact.baseline,observed:fact.observed}}))}));return result(workspace,evidence.length?"Human-shared evidence summaries read. Link a candidate to inspect its exact excerpt in claim context.":"No evidence is shared. Ask the human to share an evidence item in the page.",{evidence})}
     }),
     register({
       name:"review_get_claim_context",title:"Inspect claim context",description:"Read one claim and passages from evidence the human currently shares with the agent. Private evidence is excluded and never returned.",inputSchema:{type:"object",properties:{claimId:claimIdProperty},required:["claimId"],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},

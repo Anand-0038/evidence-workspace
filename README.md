@@ -29,6 +29,7 @@ The React interface and WebMCP handlers call the same domain functions. Agent wr
 
 - `review_get_summary`: compact release state without source passages
 - `review_list_claims`: current wording and review states
+- `review_list_shared_evidence`: minimal metadata and fact summaries for evidence the human permits; never private passages
 - `review_get_claim_context`: one claim and only its linked, human-shared evidence
 - `review_run_checks`: read-only deterministic compiler output
 - `review_link_evidence`: revision-guarded evidence link
@@ -60,7 +61,7 @@ corepack pnpm check
 
 The command runs TypeScript checks, Vitest contracts, and a production build. Current automated coverage includes compiler arithmetic, exact-excerpt binding, missing and conflicting sources, private evidence, human confirmation, stale proposals, canceled tool calls, dynamic export registration, cleanup, and the release invariant.
 
-Local headless-Chrome checks cover the contradiction-to-approval flow and 320px horizontal overflow. A separate Chrome 150 WebMCP probe discovered the eight locked-state tools, executed a read, executed a visible evidence-link write from revision 1 to 2, and confirmed stale-revision and private-evidence denials without mutation. ChatGPT execution, public deployment, public repository, demo video, and Devpost submission remain separate external gates.
+Local headless-Chrome checks cover the contradiction-to-approval flow and 320px horizontal overflow. A separate Chrome 150 WebMCP probe discovered the locked-state tools, executed a read, executed a visible evidence-link write from revision 1 to 2, and confirmed stale-revision and private-evidence denials without mutation. The new shared-evidence discovery tool is contract-tested but still needs to be added to the native end-to-end receipt. ChatGPT execution, public deployment, public repository, demo video, and Devpost submission remain separate external gates.
 
 ## Current boundary
 
