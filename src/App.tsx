@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { compileClaimVerification, confirmClaim, createExportPacket, decideProposal, exampleWorkspace, getReleaseCheck, runExampleAgentReview, toggleEvidenceSharing, type Workspace } from "./domain";
 import { registerSiteTools, type SiteToolRuntime } from "./webmcp";
 import { loadWorkspace, parseWorkspaceJson, saveWorkspace } from "./storage";
+import {ReviewBuilder,type ReviewBuilderMode} from "./ReviewBuilder";
+import {VerificationTrace} from "./VerificationTrace";
 
 const stages=["Draft","Evidence linked","Human reviewed","Export ready"];
 const cloneExample=():Workspace=>structuredClone(exampleWorkspace);
@@ -12,6 +14,7 @@ export function App(){
   const [selectedId,setSelectedId]=useState(initialLoad.workspace.claims[0]?.id??"");
   const [notice,setNotice]=useState<string|null>(initialLoad.warning);
   const [materialLabel,setMaterialLabel]=useState(initialLoad.source==="storage"?"Saved local workspace":"Example workspace");
+  const [builderMode,setBuilderMode]=useState<ReviewBuilderMode|null>(null);
   const [toolStatus,setToolStatus]=useState<"unavailable"|"registering"|"registered"|"error">(()=>typeof document.modelContext?.registerTool==="function"?"registering":"unavailable");
   const workspaceRef=useRef(workspace);
   const toolRuntimeRef=useRef<SiteToolRuntime|null>(null);
@@ -54,6 +57,7 @@ export function App(){
     if(file.size>1_000_000){setNotice("Import rejected: workspace JSON must be 1 MB or smaller.");return}
     try{const parsed=parseWorkspaceJson(await file.text());if(!parsed.ok){setNotice(`Import rejected: ${parsed.error}`);return}setWorkspace(parsed.workspace);setSelectedId(parsed.workspace.claims[0].id);setMaterialLabel("Imported local workspace");setNotice(`Imported ${parsed.workspace.claims.length} claims and ${parsed.workspace.evidence.length} evidence items. Review sharing permissions before using site tools.`)}catch(error){setNotice(error instanceof Error?`Import failed: ${error.message}`:"Import failed.")}
   };
+  const applyBuiltWorkspace=(next:Workspace,message:string,nextSelectedId:string)=>{setWorkspace(next);setSelectedId(nextSelectedId);setMaterialLabel(next.title?"User-created local review":"Edited local workspace");setNotice(message);setBuilderMode(null)};
 
   return <><a className="skip-link" href="#main-content">Skip to review workspace</a><main id="main-content" className={`app-shell ${proposal?"has-proposal":""}`}>
     <header className="masthead">
@@ -64,13 +68,16 @@ export function App(){
       </div>
       <div className="header-actions">
         <span className={`capability ${toolStatus==="registered"?"available":"unavailable"}`}>{toolStatus==="registered"?"Site tools registered":toolStatus==="registering"?"Registering site tools":toolStatus==="error"?"Site tool error":"WebMCP unavailable"}</span>
+        <button className="text-button primary-text-button" onClick={()=>setBuilderMode("new")}>New review</button>
+        <button className="text-button" disabled={Boolean(proposal)} onClick={()=>setBuilderMode("claim")}>Add claim</button>
+        <button className="text-button" disabled={Boolean(proposal)} onClick={()=>setBuilderMode("evidence")}>Add evidence</button>
         <label className="text-button file-button">Import workspace JSON<input className="visually-hidden" type="file" accept="application/json,.json" onChange={importWorkspaceJson}/></label>
         <button className="text-button" onClick={exportWorkspaceJson}>Export workspace JSON</button>
-        <button className="text-button" onClick={()=>{setWorkspace(cloneExample());setSelectedId("claim-growth");setMaterialLabel("Example workspace");setNotice("Example workspace reset.")}}>Reset example</button>
+        <button className="text-button" onClick={()=>{if(!window.confirm("Replace the current browser-local workspace with the authored example? Export JSON first if you need a backup."))return;setWorkspace(cloneExample());setSelectedId("claim-growth");setMaterialLabel("Example workspace");setNotice("Example workspace reset.")}}>Reset example</button>
       </div>
     </header>
 
-    <aside className="fixture-note"><strong>{materialLabel}</strong> — browser-local material. Imported facts must remain bound to exact excerpts; review sharing permissions before agent use.</aside>
+    <aside className="fixture-note"><strong>{materialLabel}{workspace.title?` / ${workspace.title}`:""}</strong> — browser-local material. Imported facts must remain bound to exact excerpts; review sharing permissions before agent use.</aside>
 
     <section className={`release-rail stage-${release.stage}`} aria-labelledby="release-title">
       <div className="release-copy"><p id="release-title" className="kicker">Release invariant</p><strong>{release.ready?"Packet unlocked":"Export locked"}</strong><span>{release.ready?"Every claim is compiled and resolved.":`${release.blockers[0]}${release.blockers.length>1?` · +${release.blockers.length-1} more`:""}`}</span></div>
@@ -90,11 +97,7 @@ export function App(){
           <dl><div><dt>Agent review</dt><dd>{claim.state}</dd></div><div><dt>Human decision</dt><dd>{claim.humanDecision}</dd></div></dl>
           {claim.state==="supported"&&claim.humanDecision!=="approved"&&<button className="confirm-finding" onClick={()=>mutate((current)=>confirmClaim(current,claim.id),"Compiled finding confirmed by human.")}>Confirm compiled finding</button>}
         </article>
-        <section className={`compiler-panel compiler-${verification.status}`} aria-labelledby="compiler-title">
-          <header><div><p className="kicker">Verification compiler / manifest r{verification.workspaceRevision}</p><h2 id="compiler-title">Deterministic checks</h2></div><span className={`compiler-verdict verdict-${verification.status}`}>{verification.status}</span></header>
-          <p className="compiler-boundary">Checks typed source facts, arithmetic, units, and scope. This proves internal consistency—not objective truth.</p>
-          <ol>{verification.checks.map((item)=><li key={item.id} className={`check-${item.status}`}><span className="check-mark">{item.status==="pass"?"PASS":item.status==="fail"?"FAIL":"WAIT"}</span><div><strong>{item.label}</strong><p>{item.detail}</p>{(item.expected!==undefined||item.actual!==undefined)&&<code>source {String(item.expected??"—")} · claim {String(item.actual??"—")}</code>}</div></li>)}</ol>
-        </section>
+        <VerificationTrace manifest={verification} humanDecision={claim.humanDecision}/>
       </div>
 
       <div className="evidence-column">
@@ -114,5 +117,5 @@ export function App(){
     </section>}
 
     <section className="activity-ledger"><div><p className="kicker">Activity ledger</p><h2>Accountable changes</h2><p className="ledger-count">All {workspace.activity.length} recorded events</p></div><ol>{[...workspace.activity].reverse().map((item)=><li key={item.id}><span className={`actor actor-${item.actor}`}>{item.actor}</span><span>{item.message}</span><code>r{item.revision}</code></li>)}</ol></section>
-  </main></>;
+  </main>{builderMode&&<ReviewBuilder mode={builderMode} workspace={workspace} selectedClaimId={claim.id} onClose={()=>setBuilderMode(null)} onApply={applyBuiltWorkspace}/>}</>;
 }

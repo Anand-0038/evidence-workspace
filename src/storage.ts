@@ -17,14 +17,20 @@ function validAssertion(value:unknown):value is QuantitativeAssertion{
   if(!record(value)||!string(value.metric)||!value.metric.trim()||!string(value.unit)||!value.unit.trim()||!string(value.sourceWindow)||!value.sourceWindow.trim()) return false;
   if(value.kind==="percentage_change") return finite(value.claimedPercent);
   if(value.kind==="before_after") return finite(value.baseline)&&finite(value.observed);
+  if(value.kind==="scalar") return finite(value.claimedValue);
   return false;
 }
 
+function normalizeLegacyFacts(value:unknown):unknown{
+  if(!record(value)||!Array.isArray(value.evidence)) return value;
+  return {...value,evidence:value.evidence.map((item)=>record(item)&&Array.isArray(item.facts)?{...item,facts:item.facts.map((fact)=>record(fact)&&fact.kind===undefined&&finite(fact.baseline)&&finite(fact.observed)?{...fact,kind:"range"}:fact)}:item)};
+}
+
 function validWorkspace(value:unknown):value is Workspace{
-  if(!record(value)||value.schemaVersion!==1||!Number.isInteger(value.revision)||(value.revision as number)<1) return false;
+  if(!record(value)||value.schemaVersion!==1||!Number.isInteger(value.revision)||(value.revision as number)<1||(value.title!==undefined&&!string(value.title))) return false;
   if(!Array.isArray(value.claims)||value.claims.length===0||!Array.isArray(value.evidence)||!Array.isArray(value.proposals)||!Array.isArray(value.activity)) return false;
   const claims=value.claims.every((claim)=>record(claim)&&string(claim.id)&&string(claim.text)&&["unreviewed","supported","contradicted","unsupported"].includes(claim.state as string)&&stringArray(claim.linkedEvidenceIds)&&(claim.rationale===null||string(claim.rationale))&&["pending","approved","rejected"].includes(claim.humanDecision as string)&&validAssertion(claim.assertion));
-  const evidence=value.evidence.every((item)=>record(item)&&string(item.id)&&string(item.title)&&string(item.sourceLabel)&&string(item.passage)&&typeof item.sharedWithAgent==="boolean"&&["primary","supporting","unknown"].includes(item.kind as string)&&Array.isArray(item.facts)&&item.facts.every((fact)=>record(fact)&&string(fact.metric)&&finite(fact.baseline)&&finite(fact.observed)&&string(fact.unit)&&string(fact.sourceWindow)&&string(fact.sourceExcerpt)));
+  const evidence=value.evidence.every((item)=>record(item)&&string(item.id)&&string(item.title)&&string(item.sourceLabel)&&string(item.passage)&&typeof item.sharedWithAgent==="boolean"&&["primary","supporting","unknown"].includes(item.kind as string)&&Array.isArray(item.facts)&&item.facts.every((fact)=>record(fact)&&string(fact.metric)&&string(fact.unit)&&string(fact.sourceWindow)&&string(fact.sourceExcerpt)&&(fact.kind==="range"?finite(fact.baseline)&&finite(fact.observed):fact.kind==="scalar"&&finite(fact.value))));
   const proposals=value.proposals.every((proposal)=>record(proposal)&&string(proposal.id)&&string(proposal.claimId)&&string(proposal.proposedText)&&(proposal.proposedAssertion===undefined||validAssertion(proposal.proposedAssertion))&&string(proposal.reason)&&["pending","accepted","rejected"].includes(proposal.state as string)&&string(proposal.createdAt)&&Number.isInteger(proposal.basedOnRevision)&&string(proposal.claimTextAtCreation));
   const activity=value.activity.every((item)=>record(item)&&string(item.id)&&["human","agent","system"].includes(item.actor as string)&&string(item.message)&&Number.isInteger(item.revision));
   if(!claims||!evidence||!proposals||!activity) return false;
@@ -45,7 +51,7 @@ export function loadWorkspace(storage:StorageLike):WorkspaceLoadResult{
 }
 
 export function parseWorkspaceJson(raw:string):WorkspaceParseResult{
-  try{const parsed:unknown=JSON.parse(raw);return validWorkspace(parsed)?{ok:true,workspace:parsed}:{ok:false,error:"Workspace does not match schema version 1."}}catch(error){return {ok:false,error:error instanceof Error?error.message:"Workspace JSON could not be read."}}
+  try{const parsed:unknown=normalizeLegacyFacts(JSON.parse(raw));return validWorkspace(parsed)?{ok:true,workspace:parsed}:{ok:false,error:"Workspace does not match schema version 1."}}catch(error){return {ok:false,error:error instanceof Error?error.message:"Workspace JSON could not be read."}}
 }
 
 export function saveWorkspace(storage:StorageLike,workspace:Workspace):string|null{

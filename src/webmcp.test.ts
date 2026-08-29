@@ -15,7 +15,7 @@ describe("WebMCP contracts",()=>{
     expect(tools.every((tool)=>(tool.inputSchema as {additionalProperties?:boolean}).additionalProperties===false)).toBe(true);
     const listShared=tools.find((tool)=>tool.name==="review_list_shared_evidence")!;
     const sharedResponse=await listShared.execute({},{signal:new AbortController().signal}) as {ok:boolean;evidence:Array<Record<string,unknown>>};
-    expect(sharedResponse).toMatchObject({ok:true,evidence:[{id:"evidence-pilot-note",title:"Pilot close-out note",kind:"primary",facts:[{metric:"weekly completed reviews",unit:"reviews/week",sourceWindow:"four weekly cycles",values:{baseline:50,observed:60}}]}]});
+    expect(sharedResponse).toMatchObject({ok:true,evidence:[{id:"evidence-pilot-note",title:"Pilot close-out note",kind:"primary",facts:[{metric:"weekly completed reviews",unit:"reviews/week",sourceWindow:"four weekly cycles",values:{kind:"range",baseline:50,observed:60}}]}]});
     const serializedShared=JSON.stringify(sharedResponse);
     expect(serializedShared).not.toContain("Reviewer timing table");
     expect(serializedShared).not.toContain("Across 31 reviewed briefs");

@@ -1,4 +1,4 @@
-import { compileClaimVerification, createExportPacket, flagClaim, getReleaseCheck, linkEvidence, proposeRevision, type ClaimState, type QuantitativeAssertion, type Workspace } from "./domain";
+import { compileClaimVerification, createExportPacket, flagClaim, getReleaseCheck, linkEvidence, proposeRevision, type ClaimState, type QuantitativeAssertion, type SourceFact, type Workspace } from "./domain";
 
 type WorkspaceReader=()=>Workspace;
 type WorkspaceWriter=(workspace:Workspace)=>void;
@@ -9,7 +9,7 @@ const emptySchema={type:"object",properties:{},additionalProperties:false};
 const revisionProperty={type:"integer",minimum:1,description:"Current workspace revision shown by a read tool."};
 const claimIdProperty={type:"string",minLength:1,maxLength:80,description:"Exact claim ID returned by review_list_claims."};
 const evidenceIdProperty={type:"string",minLength:1,maxLength:80,description:"Exact evidence ID returned by review_list_shared_evidence or claim context."};
-const proposedAssertionProperty={type:"object",description:"Optional complete typed assertion for the proposed wording. Include it when quantitative values or scope change.",properties:{kind:{type:"string",enum:["percentage_change","before_after"]},metric:{type:"string",minLength:1,maxLength:120},claimedPercent:{type:"number"},baseline:{type:"number"},observed:{type:"number"},unit:{type:"string",minLength:1,maxLength:40},sourceWindow:{type:"string",minLength:1,maxLength:120}},required:["kind","metric","unit","sourceWindow"],additionalProperties:false};
+const proposedAssertionProperty={type:"object",description:"Optional complete typed assertion for the proposed wording. Include it when quantitative values or scope change.",properties:{kind:{type:"string",enum:["percentage_change","before_after","scalar"]},metric:{type:"string",minLength:1,maxLength:120},claimedPercent:{type:"number"},baseline:{type:"number"},observed:{type:"number"},claimedValue:{type:"number"},unit:{type:"string",minLength:1,maxLength:40},sourceWindow:{type:"string",minLength:1,maxLength:120}},required:["kind","metric","unit","sourceWindow"],additionalProperties:false};
 
 function result(workspace:Workspace,message:string,extra:Record<string,unknown>={}):ToolResult{
   return {ok:true,workspaceRevision:workspace.revision,message,...extra};
@@ -19,6 +19,7 @@ function stale(workspace:Workspace,expectedRevision:number):ToolResult|null{
   return expectedRevision===workspace.revision?null:{ok:false,workspaceRevision:workspace.revision,message:`Stale workspace. Expected revision ${expectedRevision}; current revision is ${workspace.revision}. Read state again before writing.`};
 }
 const canceled=(workspace:Workspace):ToolResult=>({ok:false,workspaceRevision:workspace.revision,message:"Tool call canceled before mutation."});
+const factSummary=(fact:SourceFact)=>({metric:fact.metric,unit:fact.unit,sourceWindow:fact.sourceWindow,values:fact.kind==="range"?{kind:"range",baseline:fact.baseline,observed:fact.observed}:{kind:"scalar",value:fact.value}});
 
 function parseAssertion(value:unknown):QuantitativeAssertion|undefined{
   if(value===undefined) return undefined;
@@ -28,6 +29,7 @@ function parseAssertion(value:unknown):QuantitativeAssertion|undefined{
   if(!common) throw new Error("Proposed assertion requires metric, unit, and source window.");
   if(input.kind==="percentage_change"&&typeof input.claimedPercent==="number"&&Number.isFinite(input.claimedPercent)) return {kind:"percentage_change",metric:(input.metric as string).trim(),claimedPercent:input.claimedPercent,unit:(input.unit as string).trim(),sourceWindow:(input.sourceWindow as string).trim()};
   if(input.kind==="before_after"&&typeof input.baseline==="number"&&Number.isFinite(input.baseline)&&typeof input.observed==="number"&&Number.isFinite(input.observed)) return {kind:"before_after",metric:(input.metric as string).trim(),baseline:input.baseline,observed:input.observed,unit:(input.unit as string).trim(),sourceWindow:(input.sourceWindow as string).trim()};
+  if(input.kind==="scalar"&&typeof input.claimedValue==="number"&&Number.isFinite(input.claimedValue)) return {kind:"scalar",metric:(input.metric as string).trim(),claimedValue:input.claimedValue,unit:(input.unit as string).trim(),sourceWindow:(input.sourceWindow as string).trim()};
   throw new Error("Proposed assertion is missing the numeric fields required by its kind.");
 }
 
@@ -58,7 +60,7 @@ export async function registerSiteTools(read:WorkspaceReader,write:WorkspaceWrit
     }),
     register({
       name:"review_list_shared_evidence",title:"List human-shared evidence",description:"List minimal metadata and typed fact summaries for evidence the human currently permits the agent to use. Private evidence and exact passages are never returned.",inputSchema:emptySchema,annotations:{readOnlyHint:true,untrustedContentHint:true},
-      execute:async()=>{const workspace=read();const evidence=workspace.evidence.filter((item)=>item.sharedWithAgent).map((item)=>({id:item.id,title:item.title,sourceLabel:item.sourceLabel,kind:item.kind,facts:item.facts.map((fact)=>({metric:fact.metric,unit:fact.unit,sourceWindow:fact.sourceWindow,values:{baseline:fact.baseline,observed:fact.observed}}))}));return result(workspace,evidence.length?"Human-shared evidence summaries read. Link a candidate to inspect its exact excerpt in claim context.":"No evidence is shared. Ask the human to share an evidence item in the page.",{evidence})}
+      execute:async()=>{const workspace=read();const evidence=workspace.evidence.filter((item)=>item.sharedWithAgent).map((item)=>({id:item.id,title:item.title,sourceLabel:item.sourceLabel,kind:item.kind,facts:item.facts.map(factSummary)}));return result(workspace,evidence.length?"Human-shared evidence summaries read. Link a candidate to inspect its exact excerpt in claim context.":"No evidence is shared. Ask the human to share an evidence item in the page.",{evidence})}
     }),
     register({
       name:"review_get_claim_context",title:"Inspect claim context",description:"Read one claim and passages from evidence the human currently shares with the agent. Private evidence is excluded and never returned.",inputSchema:{type:"object",properties:{claimId:claimIdProperty},required:["claimId"],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},

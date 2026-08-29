@@ -5,13 +5,17 @@ export type CheckStatus = "pass" | "fail" | "blocked";
 
 export interface PercentageChangeAssertion { kind:"percentage_change"; metric:string; claimedPercent:number; unit:string; sourceWindow:string }
 export interface BeforeAfterAssertion { kind:"before_after"; metric:string; baseline:number; observed:number; unit:string; sourceWindow:string }
-export type QuantitativeAssertion = PercentageChangeAssertion | BeforeAfterAssertion;
-export interface SourceFact { metric:string; baseline:number; observed:number; unit:string; sourceWindow:string; sourceExcerpt:string }
+export interface ScalarAssertion { kind:"scalar"; metric:string; claimedValue:number; unit:string; sourceWindow:string }
+export type QuantitativeAssertion = PercentageChangeAssertion | BeforeAfterAssertion | ScalarAssertion;
+interface SourceFactBase { metric:string; unit:string; sourceWindow:string; sourceExcerpt:string }
+export interface RangeSourceFact extends SourceFactBase { kind:"range"; baseline:number; observed:number }
+export interface ScalarSourceFact extends SourceFactBase { kind:"scalar"; value:number }
+export type SourceFact = RangeSourceFact | ScalarSourceFact;
 export interface Evidence { id:string; title:string; sourceLabel:string; passage:string; sharedWithAgent:boolean; kind:"primary"|"supporting"|"unknown"; facts:SourceFact[] }
 export interface Claim { id:string; text:string; state:ClaimState; linkedEvidenceIds:string[]; rationale:string|null; humanDecision:HumanDecision; assertion:QuantitativeAssertion }
 export interface RevisionProposal { id:string; claimId:string; proposedText:string; proposedAssertion?:QuantitativeAssertion; reason:string; state:ProposalState; createdAt:string; basedOnRevision:number; claimTextAtCreation:string }
 export interface ActivityEvent { id:string; actor:"human"|"agent"|"system"; message:string; revision:number }
-export interface Workspace { schemaVersion:1; revision:number; claims:Claim[]; evidence:Evidence[]; proposals:RevisionProposal[]; activity:ActivityEvent[] }
+export interface Workspace { schemaVersion:1; revision:number; title?:string; claims:Claim[]; evidence:Evidence[]; proposals:RevisionProposal[]; activity:ActivityEvent[] }
 export interface VerificationCheck { id:string; label:string; status:CheckStatus; detail:string; expected?:string|number; actual?:string|number }
 export interface VerificationManifest { schemaVersion:1; claimId:string; workspaceRevision:number; status:CheckStatus; sourceEvidenceIds:string[]; checks:VerificationCheck[] }
 export interface ReleaseCheck { ready:boolean; stage:0|1|2|3; blockers:string[] }
@@ -23,15 +27,15 @@ export const exampleWorkspace: Workspace = {
     {id:"claim-time",text:"Median review time fell from 18 minutes to 11 minutes.",state:"unreviewed",linkedEvidenceIds:[],rationale:null,humanDecision:"pending",assertion:{kind:"before_after",metric:"median review time",baseline:18,observed:11,unit:"minutes",sourceWindow:"31 reviewed briefs"}}
   ],
   evidence:[
-    {id:"evidence-pilot-note",title:"Pilot close-out note",sourceLabel:"Internal pilot note · 12 Aug 2026 · authored example",passage:"Weekly completed reviews rose from 50 to 60 during the pilot, a 20% increase. The sample covered four weekly cycles and should not be treated as a long-term forecast.",sharedWithAgent:true,kind:"primary",facts:[{metric:"weekly completed reviews",baseline:50,observed:60,unit:"reviews/week",sourceWindow:"four weekly cycles",sourceExcerpt:"Weekly completed reviews rose from 50 to 60 during the pilot, a 20% increase."}]},
-    {id:"evidence-timing",title:"Reviewer timing table",sourceLabel:"Timing study · 14 Aug 2026 · authored example",passage:"Across 31 reviewed briefs, median handling time was 11 minutes, compared with an 18-minute baseline collected in July.",sharedWithAgent:false,kind:"primary",facts:[{metric:"median review time",baseline:18,observed:11,unit:"minutes",sourceWindow:"31 reviewed briefs",sourceExcerpt:"Across 31 reviewed briefs, median handling time was 11 minutes, compared with an 18-minute baseline collected in July."}]}
+    {id:"evidence-pilot-note",title:"Pilot close-out note",sourceLabel:"Internal pilot note · 12 Aug 2026 · authored example",passage:"Weekly completed reviews rose from 50 to 60 during the pilot, a 20% increase. The sample covered four weekly cycles and should not be treated as a long-term forecast.",sharedWithAgent:true,kind:"primary",facts:[{kind:"range",metric:"weekly completed reviews",baseline:50,observed:60,unit:"reviews/week",sourceWindow:"four weekly cycles",sourceExcerpt:"Weekly completed reviews rose from 50 to 60 during the pilot, a 20% increase."}]},
+    {id:"evidence-timing",title:"Reviewer timing table",sourceLabel:"Timing study · 14 Aug 2026 · authored example",passage:"Across 31 reviewed briefs, median handling time was 11 minutes, compared with an 18-minute baseline collected in July.",sharedWithAgent:false,kind:"primary",facts:[{kind:"range",metric:"median review time",baseline:18,observed:11,unit:"minutes",sourceWindow:"31 reviewed briefs",sourceExcerpt:"Across 31 reviewed briefs, median handling time was 11 minutes, compared with an 18-minute baseline collected in July."}]}
   ],
   proposals:[], activity:[{id:"event-open",actor:"system",message:"Example workspace opened.",revision:1}]
 };
 
 const nextRevision=(workspace:Workspace)=>workspace.revision+1;
 const event=(workspace:Workspace,actor:ActivityEvent["actor"],message:string):ActivityEvent=>({id:`event-${workspace.revision+1}-${workspace.activity.length+1}`,actor,message,revision:nextRevision(workspace)});
-const normalized=(value:string)=>value.trim().toLocaleLowerCase();
+const normalized=(value:string)=>value.trim().toLowerCase();
 const closeEnough=(left:number,right:number)=>Math.abs(left-right)<=0.01;
 const rounded=(value:number)=>Math.round(value*100)/100;
 const check=(id:string,label:string,status:CheckStatus,detail:string,expected?:string|number,actual?:string|number):VerificationCheck=>({id,label,status,detail,...(expected===undefined?{}:{expected}),...(actual===undefined?{}:{actual})});
@@ -50,29 +54,38 @@ export function compileClaimVerification(workspace:Workspace,claimId:string):Ver
   const match=matches[0];
   if(!match){
     checks.push(check("metric-match","Metric identity",coveragePasses?"fail":"blocked",coveragePasses?"No structured source fact matches the claim metric.":"Link and share evidence before matching the metric.",claim.assertion.metric));
-    checks.push(check("source-binding","Exact excerpt binding","blocked","A matching source fact is required first."),check("source-conflict","Cross-source consistency","blocked","A matching source fact is required first."),check("unit-match","Unit consistency","blocked","A matching source fact is required first."),check("window-match","Scope consistency","blocked","A matching source fact is required first."),check("value-check","Quantitative value","blocked","A matching source fact is required first."));
+    checks.push(check("source-binding","Exact excerpt binding","blocked","A matching source fact is required first."),check("source-conflict","Cross-source consistency","blocked","A matching source fact is required first."),check("fact-shape","Source fact shape","blocked","A matching source fact is required first."),check("unit-match","Unit consistency","blocked","A matching source fact is required first."),check("window-match","Scope consistency","blocked","A matching source fact is required first."),check("value-check","Quantitative value","blocked","A matching source fact is required first."));
   }else{
     checks.push(check("metric-match","Metric identity","pass",`Matched a typed fact from ${match.evidenceId}.`,claim.assertion.metric,match.fact.metric));
     const bindingPasses=matches.every(({fact,passage})=>{
       const values=(fact.sourceExcerpt.match(/-?\d+(?:\.\d+)?/g)??[]).map(Number);
-      return passage.includes(fact.sourceExcerpt)&&values.some((value)=>closeEnough(value,fact.baseline))&&values.some((value)=>closeEnough(value,fact.observed));
+      const requiredValues=fact.kind==="range"?[fact.baseline,fact.observed]:[fact.value];
+      return passage.includes(fact.sourceExcerpt)&&requiredValues.every((required)=>values.some((value)=>closeEnough(value,required)));
     });
-    checks.push(check("source-binding","Exact excerpt binding",bindingPasses?"pass":"fail",bindingPasses?"Every typed fact is bound to an exact source excerpt containing both values.":"A typed fact is missing from its cited passage or its values are not present in the exact excerpt."));
+    checks.push(check("source-binding","Exact excerpt binding",bindingPasses?"pass":"fail",bindingPasses?"Every typed fact is bound to an exact source excerpt containing its quantitative values.":"A typed fact is missing from its cited passage or its values are not present in the exact excerpt."));
     const firstFact=match.fact;
-    const sourcesAgree=matches.every(({fact})=>closeEnough(fact.baseline,firstFact.baseline)&&closeEnough(fact.observed,firstFact.observed)&&normalized(fact.unit)===normalized(firstFact.unit)&&normalized(fact.sourceWindow)===normalized(firstFact.sourceWindow));
-    checks.push(check("source-conflict","Cross-source consistency",sourcesAgree?"pass":"fail",sourcesAgree?`${matches.length} matching source fact${matches.length===1?" has":"s have"} no quantitative conflict.`:"Linked sources disagree on values, units, or evaluation scope.","matching linked sources agree",sourcesAgree?"agree":"conflict"));
+    const sourcesAgree=matches.every(({fact})=>fact.kind===firstFact.kind&&normalized(fact.unit)===normalized(firstFact.unit)&&normalized(fact.sourceWindow)===normalized(firstFact.sourceWindow)&&(fact.kind==="range"&&firstFact.kind==="range"?closeEnough(fact.baseline,firstFact.baseline)&&closeEnough(fact.observed,firstFact.observed):fact.kind==="scalar"&&firstFact.kind==="scalar"&&closeEnough(fact.value,firstFact.value)));
+    checks.push(check("source-conflict","Cross-source consistency",sourcesAgree?"pass":"fail",sourcesAgree?`${matches.length} matching source fact${matches.length===1?" has":"s have"} no quantitative conflict.`:"Linked sources disagree on values, units, evaluation scope, or fact shape.","matching linked sources agree",sourcesAgree?"agree":"conflict"));
+    const expectedFactKind=claim.assertion.kind==="scalar"?"scalar":"range";
+    const shapePasses=match.fact.kind===expectedFactKind;
+    checks.push(check("fact-shape","Source fact shape",shapePasses?"pass":"fail",shapePasses?"The source fact shape matches the claim assertion.":`${claim.assertion.kind} assertions require a ${expectedFactKind} source fact.`,expectedFactKind,match.fact.kind));
     const unitPasses=normalized(match.fact.unit)===normalized(claim.assertion.unit);
     checks.push(check("unit-match","Unit consistency",unitPasses?"pass":"fail",unitPasses?"Claim and source use the same unit.":"Claim and source units differ.",match.fact.unit,claim.assertion.unit));
     const windowPasses=normalized(match.fact.sourceWindow)===normalized(claim.assertion.sourceWindow);
     checks.push(check("window-match","Scope consistency",windowPasses?"pass":"fail",windowPasses?"The claim preserves the source evaluation window.":"The claim scope does not match the source window.",match.fact.sourceWindow,claim.assertion.sourceWindow));
-    if(claim.assertion.kind==="percentage_change"){
+    if(!shapePasses){
+      checks.push(check("value-check","Quantitative value","blocked","The assertion and source fact shapes must match before values can be compared."));
+    }else if(claim.assertion.kind==="percentage_change"&&match.fact.kind==="range"){
       const actualPercent=rounded(((match.fact.observed-match.fact.baseline)/match.fact.baseline)*100);
       const arithmeticPasses=Number.isFinite(actualPercent)&&closeEnough(actualPercent,claim.assertion.claimedPercent);
       checks.push(check("value-check","Percentage arithmetic",arithmeticPasses?"pass":"fail",arithmeticPasses?`(${match.fact.observed} − ${match.fact.baseline}) / ${match.fact.baseline} resolves to the claimed change.`:`The source values resolve to ${actualPercent}%, not ${claim.assertion.claimedPercent}%.`,actualPercent,claim.assertion.claimedPercent));
-    }else{
+    }else if(claim.assertion.kind==="before_after"&&match.fact.kind==="range"){
       const baselinePasses=closeEnough(match.fact.baseline,claim.assertion.baseline);
       const observedPasses=closeEnough(match.fact.observed,claim.assertion.observed);
       checks.push(check("value-check","Before/after values",baselinePasses&&observedPasses?"pass":"fail",baselinePasses&&observedPasses?"Both quantitative values match the source fact.":"At least one quantitative value differs from the source fact.",`${match.fact.baseline} → ${match.fact.observed}`,`${claim.assertion.baseline} → ${claim.assertion.observed}`));
+    }else if(claim.assertion.kind==="scalar"&&match.fact.kind==="scalar"){
+      const valuePasses=closeEnough(match.fact.value,claim.assertion.claimedValue);
+      checks.push(check("value-check","Scalar value",valuePasses?"pass":"fail",valuePasses?"The claimed scalar value matches the source fact.":"The claimed scalar value differs from the source fact.",match.fact.value,claim.assertion.claimedValue));
     }
   }
   const status:CheckStatus=checks.some((item)=>item.status==="fail")?"fail":checks.some((item)=>item.status==="blocked")?"blocked":"pass";
@@ -179,7 +192,7 @@ export function runExampleAgentReview(workspace:Workspace):Workspace {
   throw new Error("Every example claim has already been reviewed.");
 }
 
-export function createVerificationPacket(workspace:Workspace){return {schemaVersion:1 as const,compilerVersion:"0.1.0" as const,workspaceRevision:workspace.revision,release:getReleaseCheck(workspace),manifests:workspace.claims.map((claim)=>compileClaimVerification(workspace,claim.id))}}
+export function createVerificationPacket(workspace:Workspace){return {schemaVersion:1 as const,compilerVersion:"0.2.0" as const,workspaceRevision:workspace.revision,release:getReleaseCheck(workspace),manifests:workspace.claims.map((claim)=>compileClaimVerification(workspace,claim.id))}}
 
 export function createExportPacket(workspace:Workspace):string {
   const verification=createVerificationPacket(workspace);
