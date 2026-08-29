@@ -1,6 +1,6 @@
 # Evidence Workspace
 
-Status: active local prototype. It is not deployed or submitted, and real WebMCP execution in ChatGPT or Chrome has not yet been captured.
+Status: active local prototype. It is not deployed or submitted. Native tool discovery is verified locally in Chrome 150 with WebMCP testing enabled; a real tool execution in a supported interactive client has not yet been captured.
 
 AI-assisted reports often reach an editor with confident numbers and weak release evidence. Evidence Workspace turns that last review into a visible, fail-closed workflow: a browser agent can inspect evidence the editor shared, run deterministic checks, and stage corrected wording, but every claim still needs a human confirmation before export.
 
@@ -58,13 +58,14 @@ corepack pnpm check
 
 The command runs TypeScript checks, Vitest contracts, and a production build. Current automated coverage includes compiler arithmetic, exact-excerpt binding, missing and conflicting sources, private evidence, human confirmation, stale proposals, canceled tool calls, dynamic export registration, cleanup, and the release invariant.
 
-Local headless-Chrome checks also cover the contradiction-to-approval flow and 320px horizontal overflow. Those checks prove the human browser flow only. A supported ChatGPT in-app-browser or Chrome WebMCP session, public deployment, public repository, demo video, and Devpost submission remain separate external gates.
+Local headless-Chrome checks also cover the contradiction-to-approval flow and 320px horizontal overflow. A separate Chrome 150 probe verifies native registration and discovery of the eight locked-state tools. These checks do not prove an interactive tool invocation. A supported ChatGPT or headed Chrome write, public deployment, public repository, demo video, and Devpost submission remain separate external gates.
 
 ## Current boundary
 
 - Local fixture and automated checks: verified
 - Human browser flow in headless Chrome: verified locally
-- ChatGPT or Chrome WebMCP discovery and execution: unverified
+- Chrome 150 WebMCP registration and discovery on the local origin: verified locally
+- Chrome or ChatGPT WebMCP tool execution: unverified
 - Validated browser-local persistence: verified locally
 - User-supplied report ingestion: not implemented
 - Deployment, public repository, video, and submission: not completed
