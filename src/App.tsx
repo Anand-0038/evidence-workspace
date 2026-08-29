@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { compileClaimVerification, confirmClaim, createExportPacket, decideProposal, exampleWorkspace, getReleaseCheck, runExampleAgentReview, toggleEvidenceSharing, type Workspace } from "./domain";
+import { compileClaimVerification, confirmClaim, createExportPacket, decideProposal, exampleWorkspace, getReleaseCheck, replaceWorkspace, runExampleAgentReview, toggleEvidenceSharing, type Workspace } from "./domain";
 import { registerSiteTools, type SiteToolRuntime } from "./webmcp";
 import { loadWorkspace, parseWorkspaceJson, saveWorkspace } from "./storage";
 import {ReviewBuilder,type ReviewBuilderMode} from "./ReviewBuilder";
@@ -57,9 +57,9 @@ export function App(){
     const file=event.currentTarget.files?.[0];event.currentTarget.value="";
     if(!file)return;
     if(file.size>1_000_000){setNotice("Import rejected: workspace JSON must be 1 MB or smaller.");return}
-    try{const parsed=parseWorkspaceJson(await file.text());if(!parsed.ok){setNotice(`Import rejected: ${parsed.error}`);return}setWorkspace(parsed.workspace);setSelectedId(parsed.workspace.claims[0].id);setMaterialLabel("Imported local workspace");setNotice(`Imported ${parsed.workspace.claims.length} claims and ${parsed.workspace.evidence.length} evidence items. Review sharing permissions before using site tools.`)}catch(error){setNotice(error instanceof Error?`Import failed: ${error.message}`:"Import failed.")}
+    try{const parsed=parseWorkspaceJson(await file.text());if(!parsed.ok){setNotice(`Import rejected: ${parsed.error}`);return}const next=replaceWorkspace(workspaceRef.current,parsed.workspace,"Imported workspace; prior decisions require confirmation in this session.");setWorkspace(next);setSelectedId(next.claims[0].id);setMaterialLabel("Imported local workspace");setNotice(`Imported ${next.claims.length} claims and ${next.evidence.length} evidence items. Prior approvals were cleared; review sharing permissions before using site tools.`)}catch(error){setNotice(error instanceof Error?`Import failed: ${error.message}`:"Import failed.")}
   };
-  const applyBuiltWorkspace=(next:Workspace,message:string,nextSelectedId:string)=>{setWorkspace(next);setSelectedId(nextSelectedId);setMaterialLabel(next.title?"User-created local review":"Edited local workspace");setNotice(message);setBuilderMode(null)};
+  const applyBuiltWorkspace=(next:Workspace,message:string,nextSelectedId:string)=>{const replacement=builderMode==="new"?replaceWorkspace(workspaceRef.current,next,"Created a new review; the previous workspace revision was retired."):next;setWorkspace(replacement);setSelectedId(nextSelectedId);setMaterialLabel(replacement.title?"User-created local review":"Edited local workspace");setNotice(message);setBuilderMode(null)};
 
   return <><a className="skip-link" href="#main-content">Skip to review workspace</a><main id="main-content" className={`app-shell ${proposal?"has-proposal":""}`}>
     <header className="masthead">
@@ -75,7 +75,7 @@ export function App(){
         <button className="text-button" disabled={Boolean(proposal)} onClick={()=>setBuilderMode("evidence")}>Add evidence</button>
         <label className="text-button file-button">Import workspace JSON<input className="visually-hidden" type="file" accept="application/json,.json" onChange={importWorkspaceJson}/></label>
         <button className="text-button" onClick={exportWorkspaceJson}>Export workspace JSON</button>
-        <button className="text-button" onClick={()=>{if(!window.confirm("Replace the current browser-local workspace with the authored example? Export JSON first if you need a backup."))return;setWorkspace(cloneExample());setSelectedId("claim-growth");setMaterialLabel("Example workspace");setNotice("Example workspace reset.")}}>Reset example</button>
+        <button className="text-button" onClick={()=>{if(!window.confirm("Replace the current browser-local workspace with the authored example? Export JSON first if you need a backup."))return;setWorkspace(replaceWorkspace(workspaceRef.current,cloneExample(),"Reset to the authored example; the previous workspace revision was retired."));setSelectedId("claim-growth");setMaterialLabel("Example workspace");setNotice("Example workspace reset; prior revision tokens are stale.")}}>Reset example</button>
       </div>
     </header>
 
@@ -105,7 +105,7 @@ export function App(){
       <div className="evidence-column">
         <div className="section-heading"><div><p className="kicker">Evidence sheets</p><h2>What the source says</h2></div><span className="share-count">{workspace.evidence.filter((item)=>item.sharedWithAgent).length}/{workspace.evidence.length} shared</span></div>
         <div className="evidence-stack">{workspace.evidence.map((item)=><article key={item.id} className={`evidence-sheet ${linked.has(item.id)?"linked":""}`}>
-          <header><div><p className="source-label">{item.sourceLabel}</p><h3>{item.title}</h3></div><label className="share-control"><input type="checkbox" checked={item.sharedWithAgent} onChange={()=>mutate((current)=>toggleEvidenceSharing(current,item.id))}/><span>{item.sharedWithAgent?"Shared with agent":"Private"}</span></label></header>
+          <header><div><p className="source-label">{item.sourceLabel}</p><h3>{item.title}</h3></div><label className="share-control"><input type="checkbox" checked={item.sharedWithAgent} onChange={()=>mutate((current)=>toggleEvidenceSharing(current,item.id))}/><span>{item.sharedWithAgent?"Shared with site tools":"Not shared with site tools"}</span></label></header>
           <blockquote>{item.passage}</blockquote>
           {linked.has(item.id)&&<p className="evidence-link"><span>↳</span> Linked to selected claim</p>}
         </article>)}</div>

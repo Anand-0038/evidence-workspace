@@ -4,7 +4,7 @@ Status: active local release candidate. It is not deployed or submitted. A compl
 
 AI-assisted reports often reach an editorial operations lead with confident numbers and weak release evidence. Evidence Workspace turns that last review into a visible, fail-closed workflow: a browser agent can discover evidence the editor shared, run deterministic checks, and stage corrected wording, but every claim still needs a human confirmation before export.
 
-The included walkthrough starts with a report claiming 40% growth. The linked source says weekly reviews rose from 50 to 60, so the compiler derives 20%, blocks release, and shows the failed arithmetic beside the wording. The agent stages a correction; the editor approves it. A second supported claim remains blocked until its private source is shared and the compiled finding is confirmed.
+The included walkthrough starts with a report claiming 40% growth. The linked source says weekly reviews rose from 50 to 60, so the compiler derives 20%, blocks release, and shows the failed arithmetic beside the wording. The agent stages a correction; the editor approves it. A second supported claim remains blocked until its source is shared with the site tools and the compiled finding is confirmed.
 
 All bundled report material is authored fixture data and is labeled in the interface. The compiler checks internal consistency between typed assertions, exact source excerpts, units, scope, and arithmetic. It does not determine objective truth.
 
@@ -23,14 +23,14 @@ flowchart LR
     H -->|"share evidence, approve revisions, confirm findings"| G
 ```
 
-The React interface and WebMCP handlers call the same domain functions. Agent writes require the current workspace revision. Private evidence is denied, calls canceled before the synchronous commit boundary do not commit, stale proposals cannot be approved, missing or conflicting sources fail closed, and the export tool is registered only while the release invariant passes. After a successful commit, export-tool registration reconciles independently and cancellation cannot roll back the recorded workspace revision. Each compiled claim has a Verification Trace that shows the source result, claim value, relation, human decision, and ordered checks without inventing release state. Valid workspaces persist in browser local storage; malformed stored data is quarantined and replaced with the labeled safe example.
+The React interface and WebMCP handlers call the same domain functions. Agent writes require the current workspace revision. Evidence not shared with site tools is denied by those tools, calls canceled before the synchronous commit boundary do not commit, stale proposals cannot be approved, missing or conflicting sources fail closed, and the export tool is registered only while the release invariant passes. After a successful commit, export-tool registration reconciles independently and cancellation cannot roll back the recorded workspace revision. Each compiled claim has a Verification Trace that shows the source result, claim value, relation, human decision, and ordered checks without inventing release state. Valid workspaces persist in browser local storage; malformed stored data is quarantined and replaced with the labeled safe example.
 
 ## Site tools
 
 - `review_get_summary`: compact release state without source passages
 - `review_list_claims`: current wording and review states
-- `review_list_shared_evidence`: minimal metadata and fact summaries for evidence the human permits; never private passages
-- `review_get_claim_context`: one claim and only its linked, human-shared evidence
+- `review_list_shared_evidence`: minimal metadata and fact summaries for evidence the human permits site tools to use; never exact passages
+- `review_get_claim_context`: one claim and only its linked evidence shared with site tools
 - `review_run_checks`: read-only deterministic compiler output
 - `review_link_evidence`: revision-guarded evidence link
 - `review_unlink_evidence`: revision-guarded evidence unlink that invalidates prior decisions
@@ -52,7 +52,7 @@ corepack pnpm dev
 
 Open the printed local URL. In development only, the “Run next fixture agent step” control drives the same domain path for local walkthroughs, but it is explicitly not proof of a real WebMCP client call. Production builds omit this fixture driver.
 
-Use **New review** to create a browser-local report, claim, and evidence record without editing JSON. **Add claim** and **Add evidence** extend that review. The builder accepts percentage, before/after, and scalar assertions; requires exact excerpts and source windows to appear in the supplied passage; rejects ambiguous numbers and zero percentage baselines; and keeps evidence private unless the human explicitly shares it.
+Use **New review** to create a browser-local report, claim, and evidence record without editing JSON. **Add claim** and **Add evidence** extend that review. The builder accepts percentage, before/after, and scalar assertions; requires exact excerpts and source windows to appear in the supplied passage; rejects ambiguous numbers and zero percentage baselines; and excludes evidence from WebMCP tool responses unless the human explicitly shares it. Evidence passages remain visible in the human-facing page; this is a site-tool permission boundary, not DOM confidentiality.
 
 Use **Export workspace JSON** to download the current typed workspace as a template or backup. **Import workspace JSON** loads a typed workspace locally. Imports are schema-validated, capped at 1 MB, persisted only in the browser, and rejected if claim state or assertion structure is malformed. Review every imported evidence-sharing flag before using site tools.
 

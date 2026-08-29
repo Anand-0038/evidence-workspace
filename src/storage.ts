@@ -28,7 +28,7 @@ function normalizeLegacyFacts(value:unknown):unknown{
 }
 
 function validWorkspace(value:unknown):value is Workspace{
-  if(!record(value)||value.schemaVersion!==1||!safeInteger(value.revision)||(value.revision as number)<1||(value.title!==undefined&&!string(value.title))) return false;
+  if(!record(value)||value.schemaVersion!==1||!safeInteger(value.revision)||(value.revision as number)<1||(value.revision as number)>=Number.MAX_SAFE_INTEGER||(value.title!==undefined&&!string(value.title))) return false;
   if(!Array.isArray(value.claims)||value.claims.length===0||!Array.isArray(value.evidence)||!Array.isArray(value.proposals)||!Array.isArray(value.activity)) return false;
   const claims=value.claims.every((claim)=>record(claim)&&string(claim.id)&&string(claim.text)&&["unreviewed","supported","contradicted","unsupported"].includes(claim.state as string)&&stringArray(claim.linkedEvidenceIds)&&(claim.rationale===null||string(claim.rationale))&&["pending","approved","rejected"].includes(claim.humanDecision as string)&&validAssertion(claim.assertion));
   const evidence=value.evidence.every((item)=>record(item)&&string(item.id)&&string(item.title)&&string(item.sourceLabel)&&string(item.passage)&&typeof item.sharedWithAgent==="boolean"&&["primary","supporting","unknown"].includes(item.kind as string)&&Array.isArray(item.facts)&&item.facts.every((fact)=>record(fact)&&string(fact.metric)&&string(fact.unit)&&string(fact.sourceWindow)&&string(fact.sourceExcerpt)&&(fact.kind==="range"?finite(fact.baseline)&&finite(fact.observed):fact.kind==="scalar"&&finite(fact.value))));
@@ -38,8 +38,11 @@ function validWorkspace(value:unknown):value is Workspace{
   const claimIds=new Set((value.claims as Array<{id:string}>).map((item)=>item.id));
   const evidenceIds=new Set((value.evidence as Array<{id:string}>).map((item)=>item.id));
   const proposalIds=new Set((value.proposals as Array<{id:string}>).map((item)=>item.id));
+  const pendingClaimIds=(value.proposals as Array<{claimId:string;state:string}>).filter((item)=>item.state==="pending").map((item)=>item.claimId);
+  const activityRevisions=(value.activity as Array<{revision:number}>).map((item)=>item.revision);
+  const activityOrderValid=activityRevisions.every((revision,index)=>revision<=(value.revision as number)&&(index===0||revision>=activityRevisions[index-1]));
   const referencesValid=(value.claims as Array<{linkedEvidenceIds:string[]}>).every((claim)=>claim.linkedEvidenceIds.every((id)=>evidenceIds.has(id)))&&(value.proposals as Array<{claimId:string;state:string;basedOnRevision:number;claimTextAtCreation:string}>).every((proposal)=>{const claim=(value.claims as Array<{id:string;text:string}>).find((item)=>item.id===proposal.claimId);return Boolean(claim)&&proposal.basedOnRevision>=1&&proposal.basedOnRevision<=(value.revision as number)&&(proposal.state!=="pending"||(proposal.basedOnRevision===value.revision&&proposal.claimTextAtCreation===claim?.text))});
-  return claimIds.size===value.claims.length&&evidenceIds.size===value.evidence.length&&proposalIds.size===value.proposals.length&&referencesValid;
+  return claimIds.size===value.claims.length&&evidenceIds.size===value.evidence.length&&proposalIds.size===value.proposals.length&&new Set(pendingClaimIds).size===pendingClaimIds.length&&activityOrderValid&&referencesValid;
 }
 
 function normalizedWorkspace(value:Workspace):Workspace{

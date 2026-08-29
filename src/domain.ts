@@ -40,6 +40,11 @@ const closeEnough=(left:number,right:number)=>Math.abs(left-right)<=0.01;
 const rounded=(value:number)=>Math.round(value*100)/100;
 const check=(id:string,label:string,status:CheckStatus,detail:string,expected?:string|number,actual?:string|number):VerificationCheck=>({id,label,status,detail,...(expected===undefined?{}:{expected}),...(actual===undefined?{}:{actual})});
 const assertionValues=(assertion:QuantitativeAssertion)=>assertion.kind==="percentage_change"?[assertion.claimedPercent]:assertion.kind==="before_after"?[assertion.baseline,assertion.observed]:[assertion.claimedValue];
+const unitAppears=(text:string,unit:string)=>{
+  const haystack=normalized(text);
+  const parts=normalized(unit).split(/[^a-z0-9]+/).filter((part)=>part.length>=2).map((part)=>part.endsWith("s")?part.slice(0,-1):part);
+  return parts.length>0&&parts.every((part)=>haystack.includes(part));
+};
 const numericValues=(text:string)=>{
   const tokens=text.match(/-?\d[\d,]*(?:\.\d+)?/g)??[];
   if(tokens.some((token)=>token.includes(",")&&!/^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(token))) return [Number.NaN];
@@ -60,11 +65,13 @@ export function compileClaimVerification(workspace:Workspace,claimId:string):Ver
   const metricAppears=normalized(claim.text).includes(normalized(claim.assertion.metric));
   const valuesAppear=claim.assertion.kind==="before_after"?orderedValuesAppear(claim.text,typedValues):typedValues.every((required)=>claimNumbers.some((value)=>closeEnough(value,required)));
   const claimBindingPasses=metricAppears&&valuesAppear;
+  const unitBindingPasses=unitAppears(claim.text,claim.assertion.unit);
   const relevantEvidenceIds=sharedEvidence.filter((evidence)=>evidence.facts.some((fact)=>normalized(fact.metric)===normalized(claim.assertion.metric))).map((evidence)=>evidence.id);
   const relevancePasses=coveragePasses&&relevantEvidenceIds.length===sharedEvidence.length;
   const checks:VerificationCheck[]=[
     check("source-coverage","Shared source coverage",coveragePasses?"pass":"fail",coverageDetail,"all linked sources resolved and shared",`${sharedEvidence.length}/${claim.linkedEvidenceIds.length}`),
     check("claim-binding","Claim wording binding",claimBindingPasses?"pass":"fail",claimBindingPasses?"The visible wording contains the typed metric and assertion values in semantic order.":!metricAppears?"The typed metric does not appear in the visible claim wording.":claim.assertion.kind==="before_after"?"The visible claim wording does not preserve the typed baseline-to-observed order.":"The visible claim wording does not contain every value in its typed assertion.",`${claim.assertion.metric}: ${typedValues.join(" / ")}`,`${metricAppears?"metric present":"metric missing"}; ${claimNumbers.length?claimNumbers.join(" / "):"no numeric values"}`),
+    check("claim-unit-binding","Visible unit binding",unitBindingPasses?"pass":"fail",unitBindingPasses?"The visible wording preserves the typed unit.":"The typed unit does not appear in the visible claim wording.",claim.assertion.unit,unitBindingPasses?"unit present":"unit missing"),
     check("evidence-relevance","Linked evidence relevance",coveragePasses?(relevancePasses?"pass":"fail"):"blocked",coveragePasses?(relevancePasses?"Every linked source contains a typed fact for the claim metric.":`Unrelated linked evidence: ${sharedEvidence.filter((item)=>!relevantEvidenceIds.includes(item.id)).map((item)=>item.id).join(", ")}.`):"Resolve and share every linked source before checking relevance.","every linked source matches the claim metric",`${relevantEvidenceIds.length}/${sharedEvidence.length}`)
   ];
   const facts=sharedEvidence.flatMap((evidence)=>evidence.facts.map((fact)=>({fact,evidenceId:evidence.id,passage:evidence.passage})));
@@ -136,7 +143,7 @@ export function getReleaseCheck(workspace:Workspace):ReleaseCheck {
 export function linkEvidence(workspace:Workspace,claimId:string,evidenceId:string,rationale:string):Workspace {
   const source=workspace.evidence.find((item)=>item.id===evidenceId);
   if(!source) throw new Error("Evidence not found.");
-  if(!source.sharedWithAgent) throw new Error("Evidence is private. A human must share it first.");
+  if(!source.sharedWithAgent) throw new Error("Evidence is not shared with site tools. A human must share it first.");
   if(!workspace.claims.some((claim)=>claim.id===claimId)) throw new Error("Claim not found.");
   if(rationale.trim().length<10||rationale.length>300) throw new Error("Rationale must be 10–300 characters.");
   return {...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===claimId?{...claim,linkedEvidenceIds:[...new Set([...claim.linkedEvidenceIds,evidenceId])],state:"unreviewed",rationale:rationale.trim(),humanDecision:"pending"}:claim),activity:[...workspace.activity,event(workspace,"agent",`Linked ${evidenceId} to ${claimId}; prior review decisions were invalidated.`)]};
@@ -199,6 +206,12 @@ export function toggleEvidenceSharing(workspace:Workspace,evidenceId:string):Wor
   const target=workspace.evidence.find((item)=>item.id===evidenceId);
   if(!target) throw new Error("Evidence not found.");
   return {...workspace,revision:nextRevision(workspace),evidence:workspace.evidence.map((item)=>item.id===evidenceId?{...item,sharedWithAgent:!item.sharedWithAgent}:item),claims:workspace.claims.map((claim)=>claim.linkedEvidenceIds.includes(evidenceId)?{...claim,state:"unreviewed",rationale:null,humanDecision:"pending"}:claim),activity:[...workspace.activity,event(workspace,"human",`${target.sharedWithAgent?"Made private":"Shared"} ${evidenceId}; prior linked-claim decisions were invalidated.`)]};
+}
+
+export function replaceWorkspace(current:Workspace,incoming:Workspace,reason:string):Workspace{
+  const revision=Math.max(current.revision,incoming.revision)+1;
+  if(!Number.isSafeInteger(revision)) throw new Error("Workspace revision limit reached; export the workspace before replacing it.");
+  return {...incoming,revision,claims:incoming.claims.map((claim)=>({...claim,state:"unreviewed",rationale:null,humanDecision:"pending"})),proposals:incoming.proposals.map((proposal)=>proposal.state==="pending"?{...proposal,state:"rejected"}:proposal),activity:[...incoming.activity,{id:`event-${revision}-${incoming.activity.length+1}`,actor:"human",message:reason,revision}]};
 }
 
 export function runExampleAgentReview(workspace:Workspace):Workspace {
