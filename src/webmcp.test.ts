@@ -38,7 +38,8 @@ describe("WebMCP contracts",()=>{
     expect(canceled).toMatchObject({ok:false,message:"Tool call canceled before mutation."});
     expect(workspace.revision).toBe(1);
     workspace=runExampleAgentReview(workspace);workspace=decideProposal(workspace,workspace.proposals.at(-1)!.id,"accepted");workspace=toggleEvidenceSharing(workspace,"evidence-timing");workspace=runExampleAgentReview(workspace);workspace=confirmClaim(workspace,"claim-time");
-    await controller?.reconcileExport();
+    await Promise.all([controller?.reconcileExport(),controller?.reconcileExport()]);
+    expect(modelContext.registerTool.mock.calls.filter(([tool])=>(tool as WebMCP.ModelContextTool).name==="review_export_packet")).toHaveLength(1);
     expect(tools.map((tool)=>tool.name)).toContain("review_export_packet");
     workspace=toggleEvidenceSharing(workspace,"evidence-timing");
     await controller?.reconcileExport();

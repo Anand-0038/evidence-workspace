@@ -36,11 +36,14 @@ function validWorkspace(value:unknown):value is Workspace{
   if(!claims||!evidence||!proposals||!activity) return false;
   const claimIds=new Set((value.claims as Array<{id:string}>).map((item)=>item.id));
   const evidenceIds=new Set((value.evidence as Array<{id:string}>).map((item)=>item.id));
-  return claimIds.size===value.claims.length&&evidenceIds.size===value.evidence.length;
+  const proposalIds=new Set((value.proposals as Array<{id:string}>).map((item)=>item.id));
+  const referencesValid=(value.claims as Array<{linkedEvidenceIds:string[]}>).every((claim)=>claim.linkedEvidenceIds.every((id)=>evidenceIds.has(id)))&&(value.proposals as Array<{claimId:string;state:string;basedOnRevision:number;claimTextAtCreation:string}>).every((proposal)=>{const claim=(value.claims as Array<{id:string;text:string}>).find((item)=>item.id===proposal.claimId);return Boolean(claim)&&proposal.basedOnRevision>=1&&proposal.basedOnRevision<=(value.revision as number)&&(proposal.state!=="pending"||(proposal.basedOnRevision===value.revision&&proposal.claimTextAtCreation===claim?.text))});
+  return claimIds.size===value.claims.length&&evidenceIds.size===value.evidence.length&&proposalIds.size===value.proposals.length&&referencesValid;
 }
 
 export function loadWorkspace(storage:StorageLike):WorkspaceLoadResult{
-  const raw=storage.getItem(WORKSPACE_STORAGE_KEY);
+  let raw:string|null;
+  try{raw=storage.getItem(WORKSPACE_STORAGE_KEY)}catch(error){return {workspace:cloneExample(),warning:error instanceof Error?`Browser storage is unavailable; changes will remain in memory for this session. ${error.message}`:"Browser storage is unavailable; changes will remain in memory for this session.",source:"recovered"}}
   if(raw===null) return {workspace:cloneExample(),warning:null,source:"default"};
   const parsed=parseWorkspaceJson(raw);
   if(parsed.ok) return {workspace:parsed.workspace,warning:null,source:"storage"};

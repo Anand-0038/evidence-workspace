@@ -9,7 +9,8 @@ const stages=["Draft","Evidence linked","Human reviewed","Export ready"];
 const cloneExample=():Workspace=>structuredClone(exampleWorkspace);
 
 export function App(){
-  const [initialLoad]=useState(()=>loadWorkspace(window.localStorage));
+  const [browserStorage]=useState<Storage|null>(()=>{try{return window.localStorage}catch{return null}});
+  const [initialLoad]=useState(()=>browserStorage?loadWorkspace(browserStorage):{workspace:cloneExample(),warning:"Browser storage is unavailable; changes will remain in memory for this session.",source:"recovered" as const});
   const [workspace,setWorkspace]=useState<Workspace>(initialLoad.workspace);
   const [selectedId,setSelectedId]=useState(initialLoad.workspace.claims[0]?.id??"");
   const [notice,setNotice]=useState<string|null>(initialLoad.warning);
@@ -24,6 +25,7 @@ export function App(){
   const claim=workspace.claims.find((item)=>item.id===selectedId)??workspace.claims[0];
   const linked=new Set(claim.linkedEvidenceIds);
   const proposal=workspace.proposals.find((item)=>item.claimId===claim.id&&item.state==="pending");
+  const proposalStale=Boolean(proposal&&(proposal.basedOnRevision!==workspace.revision||proposal.claimTextAtCreation!==claim.text));
   const verification=useMemo(()=>compileClaimVerification(workspace,claim.id),[workspace,claim.id]);
 
   useEffect(()=>{
@@ -35,7 +37,7 @@ export function App(){
   },[]);
 
   useEffect(()=>{void toolRuntimeRef.current?.reconcileExport().catch((error)=>{setToolStatus("error");setNotice(error instanceof Error?`Export tool reconciliation failed: ${error.message}`:"Export tool reconciliation failed.")})},[workspace.revision]);
-  useEffect(()=>{const warning=saveWorkspace(window.localStorage,workspace);if(warning)setNotice(warning)},[workspace]);
+  useEffect(()=>{if(!browserStorage)return;const warning=saveWorkspace(browserStorage,workspace);if(warning)setNotice(warning)},[browserStorage,workspace]);
   useEffect(()=>{if(proposal)proposalHeadingRef.current?.focus()},[proposal?.id]);
 
   const mutate=(operation:(current:Workspace)=>Workspace,message?:string)=>{
@@ -111,9 +113,9 @@ export function App(){
     </section>
 
     {proposal&&<section className="proposal-tray" aria-labelledby="proposal-title" aria-live="polite">
-      <div><p className="kicker">Human checkpoint / proposal {proposal.id}</p><h2 id="proposal-title" ref={proposalHeadingRef} tabIndex={-1}>Revision staged, not applied</h2><p>{proposal.reason}</p></div>
+      <div><p className="kicker">Human checkpoint / proposal {proposal.id}</p><h2 id="proposal-title" ref={proposalHeadingRef} tabIndex={-1}>{proposalStale?"Proposal is stale":"Revision staged, not applied"}</h2><p>{proposalStale?"The workspace changed after this proposal was staged. Dismiss it and ask the agent to stage a new revision.":proposal.reason}</p></div>
       <blockquote>{proposal.proposedText}</blockquote>
-      <div className="proposal-actions"><button className="reject" onClick={()=>mutate((current)=>decideProposal(current,proposal.id,"rejected"),"Revision rejected by human.")}>Reject revision</button><button className="approve" onClick={()=>mutate((current)=>decideProposal(current,proposal.id,"accepted"),"Revision approved by human.")}>Approve revision</button></div>
+      <div className="proposal-actions"><button className="reject" onClick={()=>mutate((current)=>decideProposal(current,proposal.id,"rejected"),proposalStale?"Stale proposal dismissed by human.":"Revision rejected by human.")}>{proposalStale?"Dismiss stale proposal":"Reject revision"}</button><button className="approve" disabled={proposalStale} onClick={()=>mutate((current)=>decideProposal(current,proposal.id,"accepted"),"Revision approved by human.")}>Approve revision</button></div>
     </section>}
 
     <section className="activity-ledger"><div><p className="kicker">Activity ledger</p><h2>Accountable changes</h2><p className="ledger-count">All {workspace.activity.length} recorded events</p></div><ol>{[...workspace.activity].reverse().map((item)=><li key={item.id}><span className={`actor actor-${item.actor}`}>{item.actor}</span><span>{item.message}</span><code>r{item.revision}</code></li>)}</ol></section>

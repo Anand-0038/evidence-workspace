@@ -62,15 +62,15 @@ Use **Export workspace JSON** to download the current typed workspace as a templ
 corepack pnpm check
 ```
 
-The command runs TypeScript checks, Vitest contracts, and a production build. The current 32-test suite covers percentage, before/after, and scalar checks; exact-excerpt binding; fact-shape, source, unit, and scope conflicts; private evidence; human confirmation; stale proposals; canceled tool calls; dynamic export registration; review creation; storage compatibility; Verification Trace rendering; cleanup; and the release invariant.
+The command runs TypeScript checks, Vitest contracts, and a production build. The current 44-test suite covers percentage, before/after, and scalar checks; visible-wording and metric binding; exact-excerpt binding; linked-source relevance; fact-shape, source, unit, scope, and conflict checks; private evidence; decision invalidation; stale-proposal recovery; canceled tool calls; race-safe dynamic export registration; review creation; storage-denial recovery and referential integrity; Verification Trace rendering; cleanup; and the release invariant.
 
-Local headless-Chrome checks cover review creation, the contradiction-to-approval flow, persisted release state, reduced motion, and zero horizontal overflow from 1440 down to 320 CSS pixels. A separate Chrome 150 probe discovered the prior nine locked-state tools and executed the complete native WebMCP path: shared-evidence discovery, linking, deterministic checks, contradiction flagging, staged correction, privacy and stale-write denials, second-claim verification, release checks, dynamic export discovery, and packet export. The new unlink tool is contract-tested locally but still needs inclusion in the next native Chrome probe. The three human-only controls were exercised separately through the page DOM by the automated probe and are recorded as such; this is not proof a person was present. ChatGPT execution, public deployment, public repository, demo video, and Devpost submission remain separate external gates.
+Local headless-Chrome checks cover review creation, the contradiction-to-approval flow, persisted release state, reduced motion, storage-denial recovery, modal keyboard containment, and zero horizontal overflow from 1440 down to 320 CSS pixels. A separate Chrome 150 probe discovered all ten locked-state tools and executed the complete native WebMCP path: shared-evidence discovery, link, unlink and relink, deterministic checks, contradiction flagging, staged correction, privacy and stale-write denials, second-claim verification, release checks, dynamic export discovery, and packet export. The three human-only controls were exercised separately through the page DOM by the automated probe and are recorded as such; this is not proof a person was present. ChatGPT execution, public deployment, public repository, demo video, and Devpost submission remain separate external gates.
 
 ## Current boundary
 
 - Local fixture and automated checks: verified
 - Human browser flow in headless Chrome: verified locally
-- Chrome 150 WebMCP registration, nine-tool locked discovery, full semantic read/write/check/stage/release/export lifecycle, stale denial, and private-evidence denial on the local origin: verified
+- Chrome 150 WebMCP registration, ten-tool locked discovery, full semantic read/link/unlink/check/stage/release/export lifecycle, stale denial, and private-evidence denial on the local origin: verified
 - ChatGPT WebMCP execution: unverified and optional for eligibility because Chrome is a supported testing route
 - Validated browser-local persistence: verified locally
 - Human-created reviews plus validated typed workspace JSON import/export: verified locally

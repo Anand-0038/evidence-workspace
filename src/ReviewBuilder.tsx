@@ -14,9 +14,24 @@ export function ReviewBuilder({mode,workspace,selectedClaimId,onClose,onApply}:P
   const [claim,setClaim]=useState(blankClaim);
   const [evidence,setEvidence]=useState(()=>blankEvidence(selectedClaimId));
   const [issues,setIssues]=useState<ValidationIssue[]>([]);
+  const dialogRef=useRef<HTMLElement>(null);
   const headingRef=useRef<HTMLHeadingElement>(null);
   const errorRef=useRef<HTMLDivElement>(null);
-  useEffect(()=>{headingRef.current?.focus()},[]);
+  useEffect(()=>{
+    const opener=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    headingRef.current?.focus();
+    const handleKey=(event:KeyboardEvent)=>{
+      if(event.key==="Escape"){event.preventDefault();onClose();return}
+      if(event.key!=="Tab")return;
+      const controls=[...(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])')??[])].filter((item)=>item.offsetParent!==null);
+      if(!controls.length){event.preventDefault();headingRef.current?.focus();return}
+      const first=controls[0];const last=controls.at(-1)!;
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+    };
+    document.addEventListener("keydown",handleKey);
+    return()=>{document.removeEventListener("keydown",handleKey);opener?.focus()};
+  },[onClose]);
   const updateClaim=<K extends keyof ClaimDraft>(key:K,value:ClaimDraft[K])=>setClaim((current)=>({...current,[key]:value}));
   const updateEvidence=<K extends keyof EvidenceDraft>(key:K,value:EvidenceDraft[K])=>setEvidence((current)=>({...current,[key]:value}));
   const chooseKind=(kind:AssertionKind)=>{updateClaim("kind",kind);if(mode==="new")updateEvidence("factKind",kind==="scalar"?"scalar":"range")};
@@ -28,7 +43,7 @@ export function ReviewBuilder({mode,workspace,selectedClaimId,onClose,onApply}:P
     onApply(result.value,mode==="new"?"Created a new local review with one claim and one exact linked source.":mode==="claim"?"Added a claim to this local review.":"Added exact evidence to this local review.",selected);
   };
   const title=mode==="new"?"Create a new review":mode==="claim"?"Add a claim":"Add evidence";
-  return <div className="builder-backdrop"><section className="review-builder" role="dialog" aria-modal="true" aria-labelledby="builder-title">
+  return <div className="builder-backdrop"><section ref={dialogRef} className="review-builder" role="dialog" aria-modal="true" aria-labelledby="builder-title">
     <header><div><p className="kicker">Human-only workspace editor</p><h2 id="builder-title" ref={headingRef} tabIndex={-1}>{title}</h2></div><button type="button" className="close-builder" aria-label="Close workspace editor" onClick={onClose}>×</button></header>
     {mode==="new"&&<p className="builder-warning"><strong>This replaces the current browser-local workspace.</strong> Export its JSON first if you need a backup. Nothing is uploaded.</p>}
     {issues.length>0&&<div className="builder-errors" role="alert" tabIndex={-1} ref={errorRef}><strong>Fix {issues.length} field{issues.length===1?"":"s"}:</strong><ul>{issues.map((item,index)=><li key={`${item.path}-${index}`}>{item.message}</li>)}</ul></div>}

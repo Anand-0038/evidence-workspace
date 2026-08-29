@@ -44,8 +44,8 @@ export async function registerSiteTools(read:WorkspaceReader,write:WorkspaceWrit
     if(!ready&&exportController){abortExport();return}
     if(ready&&!exportController){
       const nextController=new AbortController();
-      await document.modelContext!.registerTool({name:"review_export_packet",title:"Read verified release packet",description:"Return the verified Markdown packet and machine-readable compiler manifest. Registered only while every release invariant passes. Never downloads, publishes, or changes state.",inputSchema:emptySchema,annotations:{readOnlyHint:true,untrustedContentHint:true},execute:async()=>{const workspace=read();try{return result(workspace,"Verified packet compiled. No file was downloaded or published.",{packet:createExportPacket(workspace)})}catch(error){return {ok:false,workspaceRevision:workspace.revision,message:error instanceof Error?error.message:"Export is locked."}}}},{signal:nextController.signal});
       exportController=nextController;
+      try{await document.modelContext!.registerTool({name:"review_export_packet",title:"Read verified release packet",description:"Return the verified Markdown packet and machine-readable compiler manifest. Registered only while every release invariant passes. Never downloads, publishes, or changes state.",inputSchema:emptySchema,annotations:{readOnlyHint:true,untrustedContentHint:true},execute:async()=>{const workspace=read();try{return result(workspace,"Verified packet compiled. No file was downloaded or published.",{packet:createExportPacket(workspace)})}catch(error){return {ok:false,workspaceRevision:workspace.revision,message:error instanceof Error?error.message:"Export is locked."}}}},{signal:nextController.signal})}catch(error){if(exportController===nextController)exportController=null;nextController.abort();throw error}
     }
   };
 

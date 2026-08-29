@@ -39,6 +39,9 @@ const normalized=(value:string)=>value.trim().toLowerCase();
 const closeEnough=(left:number,right:number)=>Math.abs(left-right)<=0.01;
 const rounded=(value:number)=>Math.round(value*100)/100;
 const check=(id:string,label:string,status:CheckStatus,detail:string,expected?:string|number,actual?:string|number):VerificationCheck=>({id,label,status,detail,...(expected===undefined?{}:{expected}),...(actual===undefined?{}:{actual})});
+const assertionValues=(assertion:QuantitativeAssertion)=>assertion.kind==="percentage_change"?[assertion.claimedPercent]:assertion.kind==="before_after"?[assertion.baseline,assertion.observed]:[assertion.claimedValue];
+const numericValues=(text:string)=>(text.match(/-?\d+(?:\.\d+)?/g)??[]).map(Number);
+const orderedValuesAppear=(text:string,values:number[])=>{const tokens=numericValues(text);let cursor=0;return values.every((required)=>{const offset=tokens.slice(cursor).findIndex((value)=>closeEnough(value,required));if(offset<0)return false;cursor+=offset+1;return true})};
 
 export function compileClaimVerification(workspace:Workspace,claimId:string):VerificationManifest {
   const claim=workspace.claims.find((item)=>item.id===claimId);
@@ -48,7 +51,18 @@ export function compileClaimVerification(workspace:Workspace,claimId:string):Ver
   const sharedEvidence=linkedEvidence.filter((item)=>item.sharedWithAgent);
   const coveragePasses=claim.linkedEvidenceIds.length>0&&missingEvidenceIds.length===0&&sharedEvidence.length===linkedEvidence.length;
   const coverageDetail=coveragePasses?`${sharedEvidence.length} linked source${sharedEvidence.length===1?" is":"s are"} available to the compiler.`:claim.linkedEvidenceIds.length===0?"No evidence is linked to this claim.":missingEvidenceIds.length?`Missing referenced evidence: ${missingEvidenceIds.join(", ")}.`:"At least one linked source is private and cannot be compiled.";
-  const checks:VerificationCheck[]=[check("source-coverage","Shared source coverage",coveragePasses?"pass":"fail",coverageDetail,"all linked sources resolved and shared",`${sharedEvidence.length}/${claim.linkedEvidenceIds.length}`)];
+  const claimNumbers=numericValues(claim.text);
+  const typedValues=assertionValues(claim.assertion);
+  const metricAppears=normalized(claim.text).includes(normalized(claim.assertion.metric));
+  const valuesAppear=claim.assertion.kind==="before_after"?orderedValuesAppear(claim.text,typedValues):typedValues.every((required)=>claimNumbers.some((value)=>closeEnough(value,required)));
+  const claimBindingPasses=metricAppears&&valuesAppear;
+  const relevantEvidenceIds=sharedEvidence.filter((evidence)=>evidence.facts.some((fact)=>normalized(fact.metric)===normalized(claim.assertion.metric))).map((evidence)=>evidence.id);
+  const relevancePasses=coveragePasses&&relevantEvidenceIds.length===sharedEvidence.length;
+  const checks:VerificationCheck[]=[
+    check("source-coverage","Shared source coverage",coveragePasses?"pass":"fail",coverageDetail,"all linked sources resolved and shared",`${sharedEvidence.length}/${claim.linkedEvidenceIds.length}`),
+    check("claim-binding","Claim wording binding",claimBindingPasses?"pass":"fail",claimBindingPasses?"The visible wording contains the typed metric and assertion values in semantic order.":!metricAppears?"The typed metric does not appear in the visible claim wording.":claim.assertion.kind==="before_after"?"The visible claim wording does not preserve the typed baseline-to-observed order.":"The visible claim wording does not contain every value in its typed assertion.",`${claim.assertion.metric}: ${typedValues.join(" / ")}`,`${metricAppears?"metric present":"metric missing"}; ${claimNumbers.length?claimNumbers.join(" / "):"no numeric values"}`),
+    check("evidence-relevance","Linked evidence relevance",coveragePasses?(relevancePasses?"pass":"fail"):"blocked",coveragePasses?(relevancePasses?"Every linked source contains a typed fact for the claim metric.":`Unrelated linked evidence: ${sharedEvidence.filter((item)=>!relevantEvidenceIds.includes(item.id)).map((item)=>item.id).join(", ")}.`):"Resolve and share every linked source before checking relevance.","every linked source matches the claim metric",`${relevantEvidenceIds.length}/${sharedEvidence.length}`)
+  ];
   const facts=sharedEvidence.flatMap((evidence)=>evidence.facts.map((fact)=>({fact,evidenceId:evidence.id,passage:evidence.passage})));
   const matches=facts.filter(({fact})=>normalized(fact.metric)===normalized(claim.assertion.metric));
   const match=matches[0];
@@ -103,7 +117,7 @@ export function getReleaseCheck(workspace:Workspace):ReleaseCheck {
     if(manifest.status!=="pass"){const firstFailure=manifest.checks.find((item)=>item.status!=="pass");blockers.push(`${claim.id}: compiler ${manifest.status}${firstFailure?` — ${firstFailure.label}`:""}`)}
     if(claim.state==="unreviewed") blockers.push(`${claim.id}: agent review pending`);
     if(claim.state==="unsupported") blockers.push(`${claim.id}: unsupported`);
-    if(claim.state==="contradicted"&&claim.humanDecision!=="approved") blockers.push(`${claim.id}: human decision required`);
+    if(claim.state==="contradicted") blockers.push(`${claim.id}: contradiction unresolved`);
     if(claim.state==="supported"&&claim.humanDecision!=="approved") blockers.push(`${claim.id}: human confirmation required`);
   });
   const pending=workspace.proposals.some((proposal)=>proposal.state==="pending");
@@ -157,8 +171,9 @@ export function decideProposal(workspace:Workspace,proposalId:string,decision:"a
   if(!proposal) throw new Error("Pending proposal not found.");
   if(!(["accepted","rejected"] as string[]).includes(decision)) throw new Error("Invalid proposal decision.");
   const currentClaim=workspace.claims.find((claim)=>claim.id===proposal.claimId);
-  if(workspace.revision!==proposal.basedOnRevision||currentClaim?.text!==proposal.claimTextAtCreation) throw new Error(`Proposal is stale. It was based on revision ${proposal.basedOnRevision}; current revision is ${workspace.revision}.`);
-  const next:Workspace={...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===proposal.claimId?{...claim,text:decision==="accepted"?proposal.proposedText:claim.text,assertion:decision==="accepted"&&proposal.proposedAssertion?proposal.proposedAssertion:claim.assertion,humanDecision:decision==="accepted"?"approved":"rejected"}:claim),proposals:workspace.proposals.map((item)=>item.id===proposalId?{...item,state:decision}:item),activity:[...workspace.activity,event(workspace,"human",`${decision==="accepted"?"Approved":"Rejected"} ${proposalId}.`)]};
+  const staleProposal=workspace.revision!==proposal.basedOnRevision||currentClaim?.text!==proposal.claimTextAtCreation;
+  if(decision==="accepted"&&staleProposal) throw new Error(`Proposal is stale. It was based on revision ${proposal.basedOnRevision}; current revision is ${workspace.revision}. Dismiss it and stage a new proposal.`);
+  const next:Workspace={...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===proposal.claimId?{...claim,text:decision==="accepted"?proposal.proposedText:claim.text,assertion:decision==="accepted"&&proposal.proposedAssertion?proposal.proposedAssertion:claim.assertion,humanDecision:decision==="accepted"?"approved":"rejected"}:claim),proposals:workspace.proposals.map((item)=>item.id===proposalId?{...item,state:decision}:item),activity:[...workspace.activity,event(workspace,"human",`${decision==="accepted"?"Approved":staleProposal?"Dismissed stale":"Rejected"} ${proposalId}.`)]};
   if(decision==="accepted"){
     const manifest=compileClaimVerification(next,proposal.claimId);
     next.claims=next.claims.map((claim)=>claim.id===proposal.claimId?{...claim,state:manifest.status==="pass"?"supported":"contradicted"}:claim);
@@ -178,7 +193,7 @@ export function confirmClaim(workspace:Workspace,claimId:string):Workspace {
 export function toggleEvidenceSharing(workspace:Workspace,evidenceId:string):Workspace {
   const target=workspace.evidence.find((item)=>item.id===evidenceId);
   if(!target) throw new Error("Evidence not found.");
-  return {...workspace,revision:nextRevision(workspace),evidence:workspace.evidence.map((item)=>item.id===evidenceId?{...item,sharedWithAgent:!item.sharedWithAgent}:item),activity:[...workspace.activity,event(workspace,"human",`${target.sharedWithAgent?"Made private":"Shared"} ${evidenceId}.`)]};
+  return {...workspace,revision:nextRevision(workspace),evidence:workspace.evidence.map((item)=>item.id===evidenceId?{...item,sharedWithAgent:!item.sharedWithAgent}:item),claims:workspace.claims.map((claim)=>claim.linkedEvidenceIds.includes(evidenceId)?{...claim,state:"unreviewed",rationale:null,humanDecision:"pending"}:claim),activity:[...workspace.activity,event(workspace,"human",`${target.sharedWithAgent?"Made private":"Shared"} ${evidenceId}; prior linked-claim decisions were invalidated.`)]};
 }
 
 export function runExampleAgentReview(workspace:Workspace):Workspace {
