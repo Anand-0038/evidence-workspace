@@ -50,7 +50,7 @@ corepack pnpm install
 corepack pnpm dev
 ```
 
-Open the printed local URL. The “Run next fixture agent step” control drives the same domain path for local walkthroughs, but it is explicitly not proof of a real WebMCP client call.
+Open the printed local URL. In development only, the “Run next fixture agent step” control drives the same domain path for local walkthroughs, but it is explicitly not proof of a real WebMCP client call. Production builds omit this fixture driver.
 
 Use **New review** to create a browser-local report, claim, and evidence record without editing JSON. **Add claim** and **Add evidence** extend that review. The builder accepts percentage, before/after, and scalar assertions; requires exact excerpts and source windows to appear in the supplied passage; rejects ambiguous numbers and zero percentage baselines; and keeps evidence private unless the human explicitly shares it.
 
