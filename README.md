@@ -83,7 +83,7 @@ Local headless-Chrome checks cover review creation, the contradiction-to-approva
 
 - Local fixture and automated checks: verified
 - Human browser flow in headless Chrome: verified locally
-- Chrome 150 WebMCP registration, ten-tool locked discovery, full semantic read/link/unlink/check/stage/release/export lifecycle, stale denial, and private-evidence denial on the local origin: verified
+- Chrome 150 WebMCP registration, ten-tool locked discovery, full semantic read/link/unlink/check/stage/release/export lifecycle, stale denial, and tool-unshared-evidence denial on the local origin: verified
 - ChatGPT WebMCP execution: unverified and optional for eligibility because Chrome is a supported testing route
 - Validated browser-local persistence: verified locally
 - Human-created reviews plus validated typed workspace JSON import/export: verified locally
