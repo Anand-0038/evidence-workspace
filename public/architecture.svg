@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-labelledby="title description">
+  <title id="title">Evidence Workspace human-agent review architecture</title>
+  <desc id="description">A human reviewer and a browser agent use separate, bounded paths to one revisioned workspace. A deterministic compiler controls an export gate.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f4ea; }
+      .box { fill: #fffdf7; stroke: #17211f; stroke-width: 3; }
+      .human { fill: #e1efe8; stroke: #1f6b4b; stroke-width: 3; }
+      .agent { fill: #e4f1f4; stroke: #2a6679; stroke-width: 3; }
+      .danger { fill: #fff2ee; stroke: #cf493a; stroke-width: 3; }
+      .label { font: 700 23px system-ui, sans-serif; fill: #17211f; }
+      .body { font: 17px system-ui, sans-serif; fill: #33403b; }
+      .small { font: 700 15px ui-monospace, monospace; fill: #51605a; letter-spacing: .08em; }
+      .line { stroke: #17211f; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #cf493a; stroke-width: 3; fill: none; stroke-dasharray: 9 8; }
+    </style>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11z" fill="#17211f"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="430" rx="20"/>
+  <text x="54" y="54" class="small">ONE LIVE WORKSPACE · TWO BOUNDED ACTORS</text>
+  <rect x="55" y="93" width="245" height="110" rx="14" class="human"/>
+  <text x="78" y="134" class="label">Human reviewer</text>
+  <text x="78" y="165" class="body">shares evidence · approves</text>
+  <text x="78" y="189" class="body">confirms findings</text>
+  <rect x="55" y="261" width="245" height="110" rx="14" class="agent"/>
+  <text x="78" y="302" class="label">Browser agent</text>
+  <text x="78" y="333" class="body">reads shared context · checks</text>
+  <text x="78" y="357" class="body">stages a revision</text>
+  <rect x="420" y="150" width="275" height="155" rx="14" class="box"/>
+  <text x="447" y="198" class="label">Revisioned workspace</text>
+  <text x="447" y="230" class="body">claims · evidence · proposals</text>
+  <text x="447" y="255" class="body">current revision required</text>
+  <text x="447" y="280" class="body">for all agent writes</text>
+  <rect x="815" y="150" width="270" height="155" rx="14" class="box"/>
+  <text x="842" y="198" class="label">Compiler + gate</text>
+  <text x="842" y="230" class="body">exact excerpts · metric · scope</text>
+  <text x="842" y="255" class="body">arithmetic · human confirmation</text>
+  <text x="842" y="280" class="body">dynamic export availability</text>
+  <path d="M300 148 H420" class="line"/>
+  <path d="M300 316 H370 Q395 316 420 276" class="line"/>
+  <path d="M695 227 H815" class="line"/>
+  <path d="M950 305 V360" class="dash"/>
+  <text x="851" y="397" class="small" fill="#cf493a">EXPORT LOCKED UNTIL HUMAN + CHECKS PASS</text>
+</svg>

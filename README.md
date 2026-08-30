@@ -1,12 +1,39 @@
 # Evidence Workspace
 
-Status: active local release candidate. It is not deployed or submitted. A complete native WebMCP lifecycle is verified locally in Chrome 150 with WebMCP testing enabled; ChatGPT execution has not been captured.
+> **Catch the claim that should not ship.** Evidence Workspace is a human-controlled change-review layer for browser agents working on publishable claims.
 
-AI-assisted reports often reach an editorial operations lead with confident numbers and weak release evidence. Evidence Workspace applies WebMCP to the last gate before publication: a browser agent can inspect evidence the editor shared, run deterministic checks, and stage corrected wording, but every claim still needs human confirmation before export.
+[WebMCP Challenge](https://openai.com/webmcp-challenge/) · [Source code](https://github.com/Anand-0038/evidence-workspace) · **Status:** public source, local release candidate; not deployed or submitted.
 
-The included walkthrough starts with a report claiming 40% growth. The linked source says weekly reviews rose from 50 to 60, so the compiler derives 20%, blocks release, and shows the failed arithmetic beside the wording. The agent stages a correction; the editor approves it. A second supported claim remains blocked until its source is shared with the site tools and the compiled finding is confirmed.
+AI-assisted reports often reach an editorial operations lead with confident numbers and weak release evidence. Evidence Workspace applies WebMCP to the last gate before publication: a browser agent can inspect evidence the editor shared, run deterministic checks, and stage corrected wording—but every claim still needs human confirmation before export.
+
+The included walkthrough starts with a report claiming **40% growth**. The linked source says weekly reviews rose from **50 to 60**, so the compiler derives **20%**, locks export, and shows the failed arithmetic beside the wording. The agent stages a correction; the editor approves it. A second supported claim remains locked until its source is shared with the site tools and the compiled finding is confirmed.
 
 All bundled report material is authored fixture data and is labeled in the interface. The compiler checks internal consistency between typed assertions, exact source excerpts, units, scope, and arithmetic. It does not determine objective truth.
+
+## The interaction in one minute
+
+1. An editor shares the evidence a browser agent may use and opens a review.
+2. The agent reads typed claim context, runs deterministic checks, and can stage a revision against the current workspace revision.
+3. The editor sees the exact source result and compiler preview, then accepts or rejects the staged correction.
+4. Export is a dynamically available tool: it appears only after every claim passes and has a current human confirmation.
+
+This is not a chatbot beside a report. Human controls and WebMCP tools operate on the same revisioned workspace, with different authority: the agent can propose; the human can approve and release.
+
+## Screenshots
+
+These are local Chrome 150 captures against the included **authored fixture**. They demonstrate the verified local WebMCP boundary; they do not claim a deployed site or ChatGPT execution.
+
+### Browser-agent proposal, awaiting a human
+
+![A locally verified browser-agent proposal shows the reported 40 percent claim, the source-derived 20 percent result, and a staged but unapplied correction.](public/screenshots/local-webmcp-proposal.png)
+
+### Release unlock after human confirmation
+
+![A local native Chrome WebMCP capture shows site tools registered, all checks passing, a human-approved decision, and the export packet unlocked.](public/screenshots/local-webmcp-execution.png)
+
+### Trust boundary at a glance
+
+![Architecture diagram: human reviewer and browser agent have distinct bounded paths into the revisioned workspace, then a deterministic compiler decides whether export is available.](public/architecture.svg)
 
 ## Architecture
 
@@ -42,6 +69,10 @@ The first viewport includes a live Agent Handoff strip. It starts with an instru
 - `review_export_packet`: dynamically available only after every release invariant passes
 
 No WebMCP tool can approve a proposal, confirm a finding, download a file, publish a report, or change evidence-sharing permissions.
+
+## Why WebMCP
+
+Without WebMCP, an agent would need an ad hoc integration or unstructured screen interaction to understand a live review. Here, the browser exposes narrow, typed, contextual actions directly from the application. Tool availability reflects release state: ten tools are available while the report is locked; `review_export_packet` is registered only when the human-approved release invariant passes.
 
 ## Run locally
 
@@ -79,7 +110,7 @@ corepack pnpm check
 
 The command runs TypeScript checks, Vitest contracts, and a production build. The suite covers percentage, before/after, scalar, and grouped-number checks; visible wording, metric, and unit binding; exact-excerpt binding; linked-source relevance; fact-shape, source, unit, scope, and conflict checks; tool-unshared evidence denial; decision invalidation; workspace replacement and current-session reconfirmation; pending and stale proposals; canceled and concurrent tool calls; race-safe dynamic export registration; review creation; storage-denial recovery, import normalization, safe revisions, and referential integrity; Verification Trace rendering; cleanup; and the release invariant.
 
-Local headless-Chrome checks cover review creation, the contradiction-to-approval flow, proposal compiler preview, persisted release state, reduced motion, storage-denial recovery, modal keyboard containment, and zero horizontal overflow from 1440 down to 320 CSS pixels. A separate Chrome 150 probe discovered all ten locked-state tools and executed the complete native WebMCP path: shared-evidence discovery, link, unlink and relink, deterministic checks, contradiction flagging, staged correction with a passing preview, privacy and stale-write denials, second-claim verification, release checks, dynamic export discovery, and packet export. Its callbacks also drive the visible Agent Handoff surface and live 10-to-11 tool count. The three human-only controls were exercised separately through the page DOM by the automated probe and are recorded as such; this is not proof a person was present. ChatGPT execution, public deployment, public repository, demo video, and Devpost submission remain separate external gates.
+Local headless-Chrome checks cover review creation, the contradiction-to-approval flow, proposal compiler preview, persisted release state, reduced motion, storage-denial recovery, modal keyboard containment, and zero horizontal overflow from 1440 down to 320 CSS pixels. A separate Chrome 150 probe discovered all ten locked-state tools and executed the complete native WebMCP path: shared-evidence discovery, link, unlink and relink, deterministic checks, contradiction flagging, staged correction with a passing preview, privacy and stale-write denials, second-claim verification, release checks, dynamic export discovery, and packet export. Its callbacks also drive the visible Agent Handoff surface and live 10-to-11 tool count. The three human-only controls were exercised separately through the page DOM by the automated probe and are recorded as such; this is not proof a person was present. ChatGPT execution, public deployment, demo video, and Devpost submission remain separate external gates.
 
 ## Current boundary
 
@@ -90,7 +121,8 @@ Local headless-Chrome checks cover review creation, the contradiction-to-approva
 - Validated browser-local persistence: verified locally
 - Human-created reviews plus validated typed workspace JSON import/export: verified locally
 - Raw Markdown/PDF extraction into typed assertions and exact excerpts: not implemented
-- Deployment, public repository, video, and submission: not completed
+- Public repository: verified at [Anand-0038/evidence-workspace](https://github.com/Anand-0038/evidence-workspace)
+- Deployment, public demo video, and Devpost submission: not completed
 
 ## License
 
