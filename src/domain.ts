@@ -169,6 +169,16 @@ export function flagClaim(workspace:Workspace,claimId:string,state:Exclude<Claim
   return {...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((claim)=>claim.id===claimId?{...claim,state,rationale:rationale.trim(),humanDecision:"pending"}:claim),activity:[...workspace.activity,event(workspace,"agent",`Marked ${claimId} ${state} after compiler review.`)]};
 }
 
+export function recordHumanCompilerReview(workspace:Workspace,claimId:string):Workspace {
+  const claim=workspace.claims.find((item)=>item.id===claimId);
+  if(!claim) throw new Error("Claim not found.");
+  const manifest=compileClaimVerification(workspace,claimId);
+  const firstIssue=manifest.checks.find((item)=>item.status!=="pass");
+  const state:Exclude<ClaimState,"unreviewed">=manifest.status==="pass"?"supported":manifest.status==="fail"?"contradicted":"unsupported";
+  const rationale=manifest.status==="pass"?"Human recorded that every deterministic check currently passes.":firstIssue?.detail??"The compiler could not verify this claim with the currently shared evidence.";
+  return {...workspace,revision:nextRevision(workspace),claims:workspace.claims.map((item)=>item.id===claimId?{...item,state,rationale,humanDecision:"pending"}:item),activity:[...workspace.activity,event(workspace,"human",`Recorded compiler ${manifest.status} for ${claimId}; publication still requires a human decision.`)]};
+}
+
 export function proposeRevision(workspace:Workspace,claimId:string,proposedText:string,reason:string,proposedAssertion?:QuantitativeAssertion):Workspace {
   const claim=workspace.claims.find((item)=>item.id===claimId);
   if(!claim) throw new Error("Claim not found.");
@@ -178,6 +188,16 @@ export function proposeRevision(workspace:Workspace,claimId:string,proposedText:
   const revision=nextRevision(workspace);
   const proposal:RevisionProposal={id:`proposal-${revision}`,claimId,proposedText:proposedText.trim(),...(proposedAssertion?{proposedAssertion}:{}),reason:reason.trim(),state:"pending",createdAt:new Date().toISOString(),basedOnRevision:revision,claimTextAtCreation:claim.text};
   return {...workspace,revision,proposals:[...workspace.proposals,proposal],activity:[...workspace.activity,event(workspace,"agent",`Staged a revision for ${claimId}.`)]};
+}
+
+export function compileProposalPreview(workspace:Workspace,proposalId:string):VerificationManifest {
+  const proposal=workspace.proposals.find((item)=>item.id===proposalId&&item.state==="pending");
+  if(!proposal) throw new Error("Pending proposal not found.");
+  const claim=workspace.claims.find((item)=>item.id===proposal.claimId);
+  if(!claim) throw new Error("Proposal claim not found.");
+  if(workspace.revision!==proposal.basedOnRevision||claim.text!==proposal.claimTextAtCreation) throw new Error("Proposal is stale and cannot be previewed against the current workspace.");
+  const preview:Workspace={...workspace,claims:workspace.claims.map((item)=>item.id===proposal.claimId?{...item,text:proposal.proposedText,assertion:proposal.proposedAssertion??item.assertion,humanDecision:"pending"}:item)};
+  return compileClaimVerification(preview,proposal.claimId);
 }
 
 export function decideProposal(workspace:Workspace,proposalId:string,decision:"accepted"|"rejected"):Workspace {

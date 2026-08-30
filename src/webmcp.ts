@@ -1,9 +1,10 @@
-import { compileClaimVerification, createExportPacket, flagClaim, getReleaseCheck, linkEvidence, proposeRevision, unlinkEvidence, type ClaimState, type QuantitativeAssertion, type SourceFact, type Workspace } from "./domain";
+import { compileClaimVerification, compileProposalPreview, createExportPacket, flagClaim, getReleaseCheck, linkEvidence, proposeRevision, unlinkEvidence, type ClaimState, type QuantitativeAssertion, type SourceFact, type Workspace } from "./domain";
 
 type WorkspaceReader=()=>Workspace;
 type WorkspaceWriter=(workspace:Workspace)=>void;
 type ToolResult={ok:boolean;workspaceRevision:number;message:string;[key:string]:unknown};
-export interface SiteToolRuntime { abort:()=>void; reconcileExport:()=>Promise<void> }
+export interface SiteToolEvent { tool:string; ok:boolean; workspaceRevision:number; message:string; outcome:string }
+export interface SiteToolRuntime { abort:()=>void; reconcileExport:()=>Promise<void>; registeredToolCount:()=>number }
 
 const emptySchema={type:"object",properties:{},additionalProperties:false};
 const revisionProperty={type:"integer",minimum:1,maximum:Number.MAX_SAFE_INTEGER,description:"Current workspace revision shown by a read tool."};
@@ -34,26 +35,28 @@ function parseAssertion(value:unknown):QuantitativeAssertion|undefined{
   throw new Error("Proposed assertion is missing the numeric fields required by its kind.");
 }
 
-export async function registerSiteTools(read:WorkspaceReader,write:WorkspaceWriter):Promise<SiteToolRuntime|null>{
+export async function registerSiteTools(read:WorkspaceReader,write:WorkspaceWriter,onToolEvent?:(event:SiteToolEvent)=>void):Promise<SiteToolRuntime|null>{
   if(typeof document.modelContext?.registerTool!=="function") return null;
   const coreController=new AbortController();
   let exportController:AbortController|null=null;
+  let coreToolCount=0;
   const abortExport=()=>{const active=exportController as AbortController|null;if(active)active.abort();exportController=null};
-  const register=(tool:WebMCP.ModelContextTool)=>document.modelContext!.registerTool(tool,{signal:coreController.signal});
+  const instrument=(tool:WebMCP.ModelContextTool):WebMCP.ModelContextTool=>({...tool,execute:async(input,options)=>{const response=await tool.execute(input,options);if(response&&typeof response==="object"){const value=response as Partial<ToolResult>&{verification?:{status?:string};preview?:{status?:string}};if(typeof value.ok==="boolean"&&typeof value.workspaceRevision==="number"&&typeof value.message==="string"){const outcome=!value.ok?"DENIED":value.preview?.status?`STAGED / PREVIEW ${value.preview.status.toUpperCase()}`:value.verification?.status?`COMPILER ${value.verification.status.toUpperCase()}`:"COMPLETED";onToolEvent?.({tool:tool.name,ok:value.ok,workspaceRevision:value.workspaceRevision,message:value.message,outcome})}}return response}});
+  const register=async(tool:WebMCP.ModelContextTool)=>{await document.modelContext!.registerTool(instrument(tool),{signal:coreController.signal});coreToolCount+=1};
   const reconcileExport=async()=>{
     const ready=getReleaseCheck(read()).ready;
     if(!ready&&exportController){abortExport();return}
     if(ready&&!exportController){
       const nextController=new AbortController();
       exportController=nextController;
-      try{await document.modelContext!.registerTool({name:"review_export_packet",title:"Read verified release packet",description:"Return the verified Markdown packet and machine-readable compiler manifest. Registered only while every release invariant passes. Never downloads, publishes, or changes state.",inputSchema:emptySchema,annotations:{readOnlyHint:true,untrustedContentHint:true},execute:async()=>{const workspace=read();try{return result(workspace,"Verified packet compiled. No file was downloaded or published.",{packet:createExportPacket(workspace)})}catch(error){return {ok:false,workspaceRevision:workspace.revision,message:error instanceof Error?error.message:"Export is locked."}}}},{signal:nextController.signal})}catch(error){if(exportController===nextController)exportController=null;nextController.abort();throw error}
+      try{await document.modelContext!.registerTool(instrument({name:"review_export_packet",title:"Read verified release packet",description:"Return the verified Markdown packet and machine-readable compiler manifest. Registered only while every release invariant passes. Never downloads, publishes, or changes state.",inputSchema:emptySchema,annotations:{readOnlyHint:true,untrustedContentHint:true},execute:async()=>{const workspace=read();try{return result(workspace,"Verified packet compiled. No file was downloaded or published.",{packet:createExportPacket(workspace)})}catch(error){return {ok:false,workspaceRevision:workspace.revision,message:error instanceof Error?error.message:"Export is locked."}}}}),{signal:nextController.signal})}catch(error){if(exportController===nextController)exportController=null;nextController.abort();throw error}
     }
   };
   const reconcileAfterCommit=()=>{void reconcileExport().catch((error)=>console.error("WebMCP export registration reconciliation failed after a committed workspace write.",error))};
 
   try{await Promise.all([
     register({
-      name:"review_get_summary",title:"Get release summary",description:"Read the report revision, review counts, release stage, blockers, and evidence-sharing counts. Does not return source passages.",inputSchema:emptySchema,annotations:{readOnlyHint:true},
+      name:"review_get_summary",title:"Get release summary",description:"Read the report revision, review counts, release stage, blockers, and evidence-sharing counts. Does not return source passages.",inputSchema:emptySchema,annotations:{readOnlyHint:true,untrustedContentHint:true},
       execute:async()=>{const workspace=read();const release=getReleaseCheck(workspace);return result(workspace,"Release summary read.",{release,claimCounts:Object.fromEntries(["unreviewed","supported","contradicted","unsupported"].map((state)=>[state,workspace.claims.filter((claim)=>claim.state===state).length])),sharedEvidence:workspace.evidence.filter((item)=>item.sharedWithAgent).length,totalEvidence:workspace.evidence.length})}
     }),
     register({
@@ -86,12 +89,12 @@ export async function registerSiteTools(read:WorkspaceReader,write:WorkspaceWrit
     }),
     register({
       name:"review_propose_revision",title:"Stage claim revision",description:"Stage replacement wording and, when values change, a complete typed assertion. The proposal remains pending until the human approves or rejects it in the interface.",inputSchema:{type:"object",properties:{expectedRevision:revisionProperty,claimId:claimIdProperty,proposedText:{type:"string",minLength:10,maxLength:500,description:"Complete replacement claim wording."},reason:{type:"string",minLength:10,maxLength:300,description:"Why this wording better matches the evidence."},proposedAssertion:proposedAssertionProperty},required:["expectedRevision","claimId","proposedText","reason"],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true},
-      execute:async(input,options)=>{const workspace=read();if(options?.signal?.aborted)return canceled(workspace);const conflict=stale(workspace,input.expectedRevision as number);if(conflict)return conflict;try{const next=proposeRevision(workspace,input.claimId as string,input.proposedText as string,input.reason as string,parseAssertion(input.proposedAssertion));if(options?.signal?.aborted)return canceled(workspace);write(next);reconcileAfterCommit();return result(next,"Revision staged for human decision. It has not been applied.",{claimId:input.claimId,proposalId:next.proposals.at(-1)?.id})}catch(error){return {ok:false,workspaceRevision:workspace.revision,message:error instanceof Error?error.message:"Proposal failed."}}}
+      execute:async(input,options)=>{const workspace=read();if(options?.signal?.aborted)return canceled(workspace);const conflict=stale(workspace,input.expectedRevision as number);if(conflict)return conflict;try{const next=proposeRevision(workspace,input.claimId as string,input.proposedText as string,input.reason as string,parseAssertion(input.proposedAssertion));const proposalId=next.proposals.at(-1)!.id;const preview=compileProposalPreview(next,proposalId);if(options?.signal?.aborted)return canceled(workspace);write(next);reconcileAfterCommit();return result(next,"Revision staged with a deterministic compiler preview for human decision. It has not been applied.",{claimId:input.claimId,proposalId,preview})}catch(error){return {ok:false,workspaceRevision:workspace.revision,message:error instanceof Error?error.message:"Proposal failed."}}}
     }),
     register({
-      name:"review_get_release_check",title:"Check release readiness",description:"Read whether export is unlocked and the exact remaining blockers. This tool never changes state and cannot approve or publish the report.",inputSchema:emptySchema,annotations:{readOnlyHint:true},
+      name:"review_get_release_check",title:"Check release readiness",description:"Read whether export is unlocked and the exact remaining blockers. This tool never changes state and cannot approve or publish the report.",inputSchema:emptySchema,annotations:{readOnlyHint:true,untrustedContentHint:true},
       execute:async()=>{const workspace=read();return result(workspace,"Release readiness checked.",{release:getReleaseCheck(workspace)})}
     })
   ]);await reconcileExport()}catch(error){coreController.abort();abortExport();throw error}
-  return {abort:()=>{coreController.abort();abortExport()},reconcileExport};
+  return {abort:()=>{coreController.abort();abortExport()},reconcileExport,registeredToolCount:()=>coreToolCount+(exportController?1:0)};
 }

@@ -2,7 +2,7 @@
 
 Status: active local release candidate. It is not deployed or submitted. A complete native WebMCP lifecycle is verified locally in Chrome 150 with WebMCP testing enabled; ChatGPT execution has not been captured.
 
-AI-assisted reports often reach an editorial operations lead with confident numbers and weak release evidence. Evidence Workspace turns that last review into a visible, fail-closed workflow: a browser agent can discover evidence the editor shared, run deterministic checks, and stage corrected wording, but every claim still needs a human confirmation before export.
+AI-assisted reports often reach an editorial operations lead with confident numbers and weak release evidence. Evidence Workspace applies WebMCP to the last gate before publication: a browser agent can inspect evidence the editor shared, run deterministic checks, and stage corrected wording, but every claim still needs human confirmation before export.
 
 The included walkthrough starts with a report claiming 40% growth. The linked source says weekly reviews rose from 50 to 60, so the compiler derives 20%, blocks release, and shows the failed arithmetic beside the wording. The agent stages a correction; the editor approves it. A second supported claim remains blocked until its source is shared with the site tools and the compiled finding is confirmed.
 
@@ -23,7 +23,9 @@ flowchart LR
     H -->|"share evidence, approve revisions, confirm findings"| G
 ```
 
-The React interface and WebMCP handlers call the same domain functions. Agent writes require the current workspace revision. Evidence not shared with site tools is denied by those tools, calls canceled before the synchronous commit boundary do not commit, stale proposals cannot be approved, missing or conflicting sources fail closed, and the export tool is registered only while the release invariant passes. After a successful commit, export-tool registration reconciles independently and cancellation cannot roll back the recorded workspace revision. Each compiled claim has a Verification Trace that shows the source result, claim value, relation, human decision, and ordered checks without inventing release state. Valid workspaces persist in browser local storage; malformed stored data is quarantined and replaced with the labeled safe example.
+The React interface and WebMCP handlers call the same domain functions. Agent writes require the current workspace revision. Evidence not shared with site tools is denied by those tools, calls canceled before the synchronous commit boundary do not commit, stale proposals cannot be approved, missing or conflicting sources fail closed, and the export tool is registered only while the release invariant passes. After a successful commit, export-tool registration reconciles independently and cancellation cannot roll back the recorded workspace revision.
+
+The first viewport includes a live Agent Handoff strip. It starts with an instruction, never a fake transcript, and changes only after a real site-tool callback. It shows the actual tool, revision, outcome, live registered-tool count, and next human action. A staged correction also receives a non-mutating compiler preview before the human approves or rejects it. Each compiled claim has a Verification Trace that shows the source result, claim value, relation, human decision, and ordered checks without inventing release state. Valid workspaces persist in browser local storage; malformed stored data is quarantined and replaced with the labeled safe example.
 
 ## Site tools
 
@@ -35,7 +37,7 @@ The React interface and WebMCP handlers call the same domain functions. Agent wr
 - `review_link_evidence`: revision-guarded evidence link
 - `review_unlink_evidence`: revision-guarded evidence unlink that invalidates prior decisions
 - `review_flag_claim`: records a review state; `supported` is rejected unless checks pass
-- `review_propose_revision`: stages wording and an optional typed assertion for human review
+- `review_propose_revision`: stages wording and an optional typed assertion, returns a deterministic preview, and waits for human review
 - `review_get_release_check`: exact blockers and next human action
 - `review_export_packet`: dynamically available only after every release invariant passes
 
@@ -77,7 +79,7 @@ corepack pnpm check
 
 The command runs TypeScript checks, Vitest contracts, and a production build. The suite covers percentage, before/after, scalar, and grouped-number checks; visible wording, metric, and unit binding; exact-excerpt binding; linked-source relevance; fact-shape, source, unit, scope, and conflict checks; tool-unshared evidence denial; decision invalidation; workspace replacement and current-session reconfirmation; pending and stale proposals; canceled and concurrent tool calls; race-safe dynamic export registration; review creation; storage-denial recovery, import normalization, safe revisions, and referential integrity; Verification Trace rendering; cleanup; and the release invariant.
 
-Local headless-Chrome checks cover review creation, the contradiction-to-approval flow, persisted release state, reduced motion, storage-denial recovery, modal keyboard containment, and zero horizontal overflow from 1440 down to 320 CSS pixels. A separate Chrome 150 probe discovered all ten locked-state tools and executed the complete native WebMCP path: shared-evidence discovery, link, unlink and relink, deterministic checks, contradiction flagging, staged correction, privacy and stale-write denials, second-claim verification, release checks, dynamic export discovery, and packet export. The three human-only controls were exercised separately through the page DOM by the automated probe and are recorded as such; this is not proof a person was present. ChatGPT execution, public deployment, public repository, demo video, and Devpost submission remain separate external gates.
+Local headless-Chrome checks cover review creation, the contradiction-to-approval flow, proposal compiler preview, persisted release state, reduced motion, storage-denial recovery, modal keyboard containment, and zero horizontal overflow from 1440 down to 320 CSS pixels. A separate Chrome 150 probe discovered all ten locked-state tools and executed the complete native WebMCP path: shared-evidence discovery, link, unlink and relink, deterministic checks, contradiction flagging, staged correction with a passing preview, privacy and stale-write denials, second-claim verification, release checks, dynamic export discovery, and packet export. Its callbacks also drive the visible Agent Handoff surface and live 10-to-11 tool count. The three human-only controls were exercised separately through the page DOM by the automated probe and are recorded as such; this is not proof a person was present. ChatGPT execution, public deployment, public repository, demo video, and Devpost submission remain separate external gates.
 
 ## Current boundary
 
