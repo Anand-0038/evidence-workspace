@@ -43,8 +43,9 @@ const check=(id:string,label:string,status:CheckStatus,detail:string,expected?:s
 const assertionValues=(assertion:QuantitativeAssertion)=>assertion.kind==="percentage_change"?[assertion.claimedPercent]:assertion.kind==="before_after"?[assertion.baseline,assertion.observed]:[assertion.claimedValue];
 const unitAppears=(text:string,unit:string)=>{
   const haystack=normalized(text);
-  const parts=normalized(unit).split(/[^a-z0-9]+/).filter((part)=>part.length>=2).map((part)=>part.endsWith("s")?part.slice(0,-1):part);
-  return parts.length>0&&parts.every((part)=>haystack.includes(part));
+  const normalizedUnit=normalized(unit);
+  const parts=normalizedUnit.split(/[^a-z0-9]+/).filter((part)=>part.length>=2).map((part)=>part.endsWith("s")?part.slice(0,-1):part);
+  return parts.length>0?parts.every((part)=>haystack.includes(part)):normalizedUnit.length>0&&haystack.includes(normalizedUnit);
 };
 const numericValues=(text:string)=>{
   const tokens=text.match(/-?\d[\d,]*(?:\.\d+)?/g)??[];
