@@ -2,7 +2,9 @@
 
 Evidence Workspace helps an editorial or research-operations lead review AI-assisted claims before publication. A browser agent can inspect the evidence the person chose to share, run consistency checks, and stage a correction. It cannot approve a claim or release the report.
 
-**Current status:** the source is public and the local Chrome WebMCP path is verified. There is no deployed application, public demo video, or submission yet.
+**Live application:** [anand-0038.github.io/evidence-workspace](https://anand-0038.github.io/evidence-workspace/)
+
+**Current status:** the public application and its native Chrome WebMCP path are verified. The demo video is complete locally but is not yet published, and the challenge submission is not yet final.
 
 ## The problem
 
@@ -90,7 +92,7 @@ corepack pnpm check
 
 This runs TypeScript checks, 73 Vitest contracts, and a production build. The suite covers visible metric/value/scope binding, exact excerpts, scalar/range source presentation, zero baselines, tool-permission denials, stale and cancelled writes, proposal and decision invalidation, import validation and provenance, persistence recovery, race-safe dynamic export registration, and the release invariant.
 
-The verified local Chrome 150 path includes 19 native calls covering discovery, evidence linking, deterministic checks, staged correction, duplicate/stale/private denials, dynamic export, invalidation, recovery, re-registration, and a second successful packet export. The observed tool counts were `10 → 11 → 10 → 11 → 10`. Human-only controls were exercised separately through the page DOM by an automated probe; that verifies the guarded UI path, not a person-present decision.
+The verified public-origin Chrome 150 path includes 19 native calls covering discovery, evidence linking, deterministic checks, staged correction, duplicate/stale/private denials, dynamic export, invalidation, recovery, re-registration, and a second successful packet export. The observed tool counts were `10 → 11 → 10 → 11 → 10`, with no browser console errors. Human-only controls were exercised separately through the page DOM by an automated probe; that verifies the guarded UI path, not a person-present decision.
 
 Seven natural-language Codex model tasks also ran through a controlled bridge to the native local WebMCP registry without operator argument repair. They covered read-only publishability triage, correction staging with a human stop, private-evidence handling, stale-revision recovery, wrong-link recovery, human-gated release, and export invalidation. Page-only checkpoint controls were exercised by the evaluation controller and recorded separately from model calls. This is local model-in-the-loop evidence, not person-present, deployed-origin, or ChatGPT execution proof.
 
@@ -114,7 +116,8 @@ Seven natural-language Codex model tasks also ran through a controlled bridge to
 
 ## Limits and next work
 
-- There is no hosted deployment, public video, or submission yet.
+- The demo video is complete but has not yet been published to a public video URL.
+- The Devpost challenge submission is not final until that public video URL is attached.
 - ChatGPT execution has not been captured.
 - The current workflow starts from typed claims and evidence; arbitrary-document extraction is not implemented.
 - This is a consistency and release-control tool, not a service that proves a source is objectively true.
