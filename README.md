@@ -4,7 +4,9 @@ Evidence Workspace helps an editorial or research-operations lead review AI-assi
 
 **Live application:** [anand-0038.github.io/evidence-workspace](https://anand-0038.github.io/evidence-workspace/)
 
-**Current status:** the public application and its native Chrome WebMCP path are verified. The demo video is complete locally but is not yet published, and the challenge submission is not yet final.
+**Demo:** [Evidence Workspace — State-Dependent Authority with WebMCP](https://vimeo.com/1222737763)
+
+**Current status:** the public application and its native Chrome WebMCP path are verified. The project was submitted to The WebMCP Challenge on August 31, 2026.
 
 ## The problem
 
@@ -116,8 +118,7 @@ Seven natural-language Codex model tasks also ran through a controlled bridge to
 
 ## Limits and next work
 
-- The demo video is complete but has not yet been published to a public video URL.
-- The Devpost challenge submission is not final until that public video URL is attached.
+- The submitted demo is hosted on Vimeo. The challenge instructions specifically request YouTube, so replacing the submitted video URL with a public YouTube upload remains advisable.
 - ChatGPT execution has not been captured.
 - The current workflow starts from typed claims and evidence; arbitrary-document extraction is not implemented.
 - This is a consistency and release-control tool, not a service that proves a source is objectively true.
