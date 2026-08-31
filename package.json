@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node api.js && vite",
     "preview": "vite preview",
-    "build": "tsc -b && vite build",
+    "build": "node api.js && tsc -b && vite build",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false",
     "check": "tsc -b --pretty false && vitest run && vite build"

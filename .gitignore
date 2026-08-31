@@ -11,3 +11,6 @@ hack/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
