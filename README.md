@@ -92,7 +92,7 @@ This runs TypeScript checks, 73 Vitest contracts, and a production build. The su
 
 The verified local Chrome 150 path includes 19 native calls covering discovery, evidence linking, deterministic checks, staged correction, duplicate/stale/private denials, dynamic export, invalidation, recovery, re-registration, and a second successful packet export. The observed tool counts were `10 → 11 → 10 → 11 → 10`. Human-only controls were exercised separately through the page DOM by an automated probe; that verifies the guarded UI path, not a person-present decision.
 
-Four natural-language Codex model tasks also ran through a controlled bridge to the native local WebMCP registry without operator argument repair. They covered read-only publishability triage, correction staging with a human stop, private-evidence handling, and stale-revision recovery. This is local model-in-the-loop evidence, not deployed-origin or ChatGPT execution proof.
+Seven natural-language Codex model tasks also ran through a controlled bridge to the native local WebMCP registry without operator argument repair. They covered read-only publishability triage, correction staging with a human stop, private-evidence handling, stale-revision recovery, wrong-link recovery, human-gated release, and export invalidation. Page-only checkpoint controls were exercised by the evaluation controller and recorded separately from model calls. This is local model-in-the-loop evidence, not person-present, deployed-origin, or ChatGPT execution proof.
 
 ## Tool reference
 
