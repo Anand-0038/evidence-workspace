@@ -64,6 +64,15 @@ export function addClaim(workspace:Workspace,draft:ClaimDraft):ValidationResult<
   return {ok:true,value:{...workspace,revision,claims:[...workspace.claims,claimFrom(draft,assertion.value,claimId)],activity:[...workspace.activity,{id:`event-${revision}-${workspace.activity.length+1}`,actor:"human",message:`Added ${claimId} to the local review.`,revision}]}};
 }
 
+export function updateClaim(workspace:Workspace,claimId:string,draft:ClaimDraft):ValidationResult<Workspace>{
+  const current=workspace.claims.find((item)=>item.id===claimId);
+  if(!current)return {ok:false,issues:[issue("claim.id","Claim not found.")]};
+  if(workspace.proposals.some((item)=>item.claimId===claimId&&item.state==="pending"))return {ok:false,issues:[issue("claim.id","Decide or dismiss the pending proposal before editing this claim.")]};
+  const assertion=buildAssertion(draft);if(!assertion.ok)return assertion;
+  let revision:number;try{revision=nextWorkspaceRevision(workspace)}catch(error){return {ok:false,issues:[issue("workspace.revision",error instanceof Error?error.message:"Workspace revision limit reached.")]}};
+  return {ok:true,value:{...workspace,revision,claims:workspace.claims.map((item)=>item.id===claimId?{...item,text:trimmed(draft.text),assertion:assertion.value,state:"unreviewed",rationale:null,humanDecision:"pending"}:item),activity:[...workspace.activity,{id:`event-${revision}-${workspace.activity.length+1}`,actor:"human",message:`Edited ${claimId}; prior review decisions were invalidated.`,revision}]}};
+}
+
 export function addEvidence(workspace:Workspace,draft:EvidenceDraft):ValidationResult<Workspace>{
   const built=buildEvidence(draft);if(!built.ok)return built;
   if(draft.linkClaimId&&!workspace.claims.some((claim)=>claim.id===draft.linkClaimId))return {ok:false,issues:[issue("evidence.linkClaimId","Selected claim does not exist.")]};

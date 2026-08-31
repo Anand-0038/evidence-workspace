@@ -12,6 +12,7 @@ const string=(value:unknown)=>typeof value==="string";
 const finite=(value:unknown)=>typeof value==="number"&&Number.isFinite(value);
 const safeInteger=(value:unknown)=>typeof value==="number"&&Number.isSafeInteger(value);
 const stringArray=(value:unknown)=>Array.isArray(value)&&value.every(string);
+const handle=(value:unknown)=>typeof value==="string"&&/^[A-Za-z0-9._-]{1,80}$/.test(value);
 const cloneExample=():Workspace=>structuredClone(exampleWorkspace);
 
 function validAssertion(value:unknown):value is QuantitativeAssertion{
@@ -30,10 +31,10 @@ function normalizeLegacyFacts(value:unknown):unknown{
 function validWorkspace(value:unknown):value is Workspace{
   if(!record(value)||value.schemaVersion!==1||!safeInteger(value.revision)||(value.revision as number)<1||(value.revision as number)>=Number.MAX_SAFE_INTEGER||(value.title!==undefined&&!string(value.title))) return false;
   if(!Array.isArray(value.claims)||value.claims.length===0||!Array.isArray(value.evidence)||!Array.isArray(value.proposals)||!Array.isArray(value.activity)) return false;
-  const claims=value.claims.every((claim)=>record(claim)&&string(claim.id)&&string(claim.text)&&["unreviewed","supported","contradicted","unsupported"].includes(claim.state as string)&&stringArray(claim.linkedEvidenceIds)&&(claim.rationale===null||string(claim.rationale))&&["pending","approved","rejected"].includes(claim.humanDecision as string)&&validAssertion(claim.assertion));
-  const evidence=value.evidence.every((item)=>record(item)&&string(item.id)&&string(item.title)&&string(item.sourceLabel)&&string(item.passage)&&typeof item.sharedWithAgent==="boolean"&&["primary","supporting","unknown"].includes(item.kind as string)&&Array.isArray(item.facts)&&item.facts.every((fact)=>record(fact)&&string(fact.metric)&&string(fact.unit)&&string(fact.sourceWindow)&&string(fact.sourceExcerpt)&&(fact.kind==="range"?finite(fact.baseline)&&finite(fact.observed):fact.kind==="scalar"&&finite(fact.value))));
-  const proposals=value.proposals.every((proposal)=>record(proposal)&&string(proposal.id)&&string(proposal.claimId)&&string(proposal.proposedText)&&(proposal.proposedAssertion===undefined||validAssertion(proposal.proposedAssertion))&&string(proposal.reason)&&["pending","accepted","rejected"].includes(proposal.state as string)&&string(proposal.createdAt)&&safeInteger(proposal.basedOnRevision)&&string(proposal.claimTextAtCreation));
-  const activity=value.activity.every((item)=>record(item)&&string(item.id)&&["human","agent","system"].includes(item.actor as string)&&string(item.message)&&safeInteger(item.revision));
+  const claims=value.claims.every((claim)=>record(claim)&&handle(claim.id)&&string(claim.text)&&["unreviewed","supported","contradicted","unsupported"].includes(claim.state as string)&&stringArray(claim.linkedEvidenceIds)&&(claim.linkedEvidenceIds as unknown[]).every(handle)&&(claim.rationale===null||string(claim.rationale))&&["pending","approved","rejected"].includes(claim.humanDecision as string)&&validAssertion(claim.assertion));
+  const evidence=value.evidence.every((item)=>record(item)&&handle(item.id)&&string(item.title)&&string(item.sourceLabel)&&string(item.passage)&&typeof item.sharedWithAgent==="boolean"&&["primary","supporting","unknown"].includes(item.kind as string)&&Array.isArray(item.facts)&&item.facts.every((fact)=>record(fact)&&string(fact.metric)&&string(fact.unit)&&string(fact.sourceWindow)&&string(fact.sourceExcerpt)&&(fact.kind==="range"?finite(fact.baseline)&&finite(fact.observed):fact.kind==="scalar"&&finite(fact.value))));
+  const proposals=value.proposals.every((proposal)=>record(proposal)&&handle(proposal.id)&&handle(proposal.claimId)&&string(proposal.proposedText)&&(proposal.proposedAssertion===undefined||validAssertion(proposal.proposedAssertion))&&string(proposal.reason)&&["pending","accepted","rejected"].includes(proposal.state as string)&&string(proposal.createdAt)&&safeInteger(proposal.basedOnRevision)&&string(proposal.claimTextAtCreation));
+  const activity=value.activity.every((item)=>record(item)&&handle(item.id)&&["human","agent","system"].includes(item.actor as string)&&string(item.message)&&safeInteger(item.revision));
   if(!claims||!evidence||!proposals||!activity) return false;
   const claimIds=new Set((value.claims as Array<{id:string}>).map((item)=>item.id));
   const evidenceIds=new Set((value.evidence as Array<{id:string}>).map((item)=>item.id));

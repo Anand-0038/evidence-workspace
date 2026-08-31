@@ -44,10 +44,10 @@ describe("WebMCP contracts",()=>{
     const response=await link.execute({expectedRevision:99,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The source contains a different value."},{signal:new AbortController().signal}) as {ok:boolean;workspaceRevision:number};
     expect(response).toMatchObject({ok:false,workspaceRevision:1});
     expect(workspace.revision).toBe(1);
-    const concurrent=await Promise.all([link.execute({expectedRevision:1,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The first concurrent call links the source."},{signal:new AbortController().signal}),link.execute({expectedRevision:1,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The second concurrent call must become stale."},{signal:new AbortController().signal})]) as Array<{ok:boolean;workspaceRevision:number}>;
+     workspace.claims[0].linkedEvidenceIds=[];const concurrent=await Promise.all([link.execute({expectedRevision:1,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The first concurrent call links the source."},{signal:new AbortController().signal}),link.execute({expectedRevision:1,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The second concurrent call must become stale."},{signal:new AbortController().signal})]) as Array<{ok:boolean;workspaceRevision:number}>;
     expect(concurrent.map((item)=>item.ok).sort()).toEqual([false,true]);
     expect(workspace.revision).toBe(2);
-    workspace=structuredClone(exampleWorkspace);
+    workspace=structuredClone(exampleWorkspace);workspace.claims[0].linkedEvidenceIds=[];
     const nativeStyle=await (link.execute as unknown as (input:Record<string,unknown>)=>Promise<unknown>)({expectedRevision:1,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The native callback omitted its options object."}) as {ok:boolean;workspaceRevision:number};
     expect(nativeStyle).toMatchObject({ok:true,workspaceRevision:2});
     workspace=structuredClone(exampleWorkspace);
@@ -60,7 +60,7 @@ describe("WebMCP contracts",()=>{
     const canceled=await link.execute({expectedRevision:1,claimId:"claim-growth",evidenceId:"evidence-pilot-note",rationale:"The source contains a different value."},{signal:aborted.signal}) as {ok:boolean;message:string};
     expect(canceled).toMatchObject({ok:false,message:"Tool call canceled before mutation."});
     expect(workspace.revision).toBe(1);
-    workspace=runExampleAgentReview(workspace);workspace=decideProposal(workspace,workspace.proposals.at(-1)!.id,"accepted");workspace=toggleEvidenceSharing(workspace,"evidence-timing");workspace=runExampleAgentReview(workspace);workspace=confirmClaim(workspace,"claim-time");
+    workspace=runExampleAgentReview(workspace);workspace=decideProposal(workspace,workspace.proposals.at(-1)!.id,"accepted");workspace=confirmClaim(workspace,"claim-growth");workspace=toggleEvidenceSharing(workspace,"evidence-timing");workspace=runExampleAgentReview(workspace);workspace=confirmClaim(workspace,"claim-time");
     await Promise.all([controller?.reconcileExport(),controller?.reconcileExport()]);
     expect(modelContext.registerTool.mock.calls.filter(([tool])=>(tool as WebMCP.ModelContextTool).name==="review_export_packet")).toHaveLength(1);
     expect(tools.map((tool)=>tool.name)).toContain("review_export_packet");
@@ -68,7 +68,26 @@ describe("WebMCP contracts",()=>{
     workspace=toggleEvidenceSharing(workspace,"evidence-timing");
     await controller?.reconcileExport();
     expect(tools.map((tool)=>tool.name)).not.toContain("review_export_packet");
+    workspace=toggleEvidenceSharing(workspace,"evidence-timing");workspace=runExampleAgentReview(workspace);workspace=confirmClaim(workspace,"claim-time");
+    await controller?.reconcileExport();
+    expect(tools.map((tool)=>tool.name)).toContain("review_export_packet");
+    expect(controller?.registeredToolCount()).toBe(11);
     controller?.abort();
     expect(tools).toHaveLength(0);
+  });
+  it("does not count a delayed export registration after release becomes unsafe",async()=>{
+    let workspace:Workspace=structuredClone(exampleWorkspace);
+    workspace=runExampleAgentReview(workspace);workspace=decideProposal(workspace,workspace.proposals.at(-1)!.id,"accepted");workspace=confirmClaim(workspace,"claim-growth");workspace=toggleEvidenceSharing(workspace,"evidence-timing");workspace=runExampleAgentReview(workspace);workspace=confirmClaim(workspace,"claim-time");
+    let releaseRegistration:undefined|(()=>void);let exportSignal:AbortSignal|undefined;
+    const modelContext={registerTool:vi.fn(async(tool:WebMCP.ModelContextTool,options?:{signal?:AbortSignal})=>{if(tool.name==="review_export_packet"){exportSignal=options?.signal;await new Promise<void>((resolve)=>{releaseRegistration=resolve})}})};
+    vi.stubGlobal("document",{modelContext});
+    const runtimePromise=registerSiteTools(()=>workspace,(next)=>{workspace=next});
+    await vi.waitFor(()=>expect(releaseRegistration).toBeTypeOf("function"));
+    workspace=toggleEvidenceSharing(workspace,"evidence-timing");
+    releaseRegistration!();
+    const runtime=await runtimePromise;
+    expect(exportSignal?.aborted).toBe(true);
+    expect(runtime?.registeredToolCount()).toBe(10);
+    runtime?.abort();
   });
 });
